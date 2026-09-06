@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 
-// Fixed model: gemini-2.5-flash-lite (fastest, lowest cost, optimized for simple extraction)
-const TARGET_MODEL = 'gemini-2.5-flash-lite';
+// Supported default models if GEMINI_MODEL is not set
+const DEFAULT_MODELS = ['gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -74,64 +74,73 @@ Return strictly a JSON object with:
     let lastError: any = null;
     let parsed: any = null;
 
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const response = await ai.models.generateContent({
-          model: TARGET_MODEL,
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                {
-                  inlineData: {
-                    mimeType,
-                    data: cleanBase64,
+    const userModel = (process.env.GEMINI_MODEL || '').trim().replace(/^["']|["']$/g, '');
+    const modelsToTry = userModel
+      ? [userModel, ...DEFAULT_MODELS.filter((m) => m !== userModel)]
+      : DEFAULT_MODELS;
+
+    for (const modelName of modelsToTry) {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: [
+              {
+                role: 'user',
+                parts: [
+                  {
+                    inlineData: {
+                      mimeType,
+                      data: cleanBase64,
+                    },
                   },
-                },
-                {
-                  text: prompt,
-                },
-              ],
-            },
-          ],
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                target: { type: Type.INTEGER, description: 'Target integer value' },
-                cards: {
-                  type: Type.ARRAY,
-                  items: { type: Type.INTEGER },
-                  description: 'The 5 card integer values',
-                },
-                notes: { type: Type.STRING, description: 'Brief observation' },
+                  {
+                    text: prompt,
+                  },
+                ],
               },
-              required: ['target', 'cards'],
+            ],
+            config: {
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  target: { type: Type.INTEGER, description: 'Target integer value' },
+                  cards: {
+                    type: Type.ARRAY,
+                    items: { type: Type.INTEGER },
+                    description: 'The 5 card integer values',
+                  },
+                  notes: { type: Type.STRING, description: 'Brief observation' },
+                },
+                required: ['target', 'cards'],
+              },
             },
-          },
-        });
+          });
 
-        const responseText = response.text || '{}';
-        parsed = JSON.parse(responseText);
-        break;
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`Model ${TARGET_MODEL} attempt ${attempt} failed:`, err?.message || err);
-        const isUnavailable =
-          err?.message?.includes('503') ||
-          err?.message?.includes('UNAVAILABLE') ||
-          err?.message?.includes('high demand') ||
-          err?.message?.includes('429') ||
-          err?.message?.includes('RESOURCE_EXHAUSTED');
-
-        if (isUnavailable && attempt < 2) {
-          await sleep(1000 * attempt);
-          continue;
-        } else {
+          const responseText = response.text || '{}';
+          parsed = JSON.parse(responseText);
           break;
+        } catch (err: any) {
+          lastError = err;
+          console.warn(`Model ${modelName} attempt ${attempt} failed:`, err?.message || err);
+          const isUnavailable =
+            err?.message?.includes('503') ||
+            err?.message?.includes('UNAVAILABLE') ||
+            err?.message?.includes('high demand') ||
+            err?.message?.includes('429') ||
+            err?.message?.includes('RESOURCE_EXHAUSTED');
+
+          if (isUnavailable && attempt < 2) {
+            await sleep(1000 * attempt);
+            continue;
+          } else {
+            break;
+          }
         }
       }
+
+      if (parsed) break;
     }
 
     if (!parsed) {
