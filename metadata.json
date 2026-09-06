@@ -1,0 +1,6 @@
+{
+  "name": "Card Calc Solver - カード計算パズル解答検索＆ゲーム",
+  "description": "ゲームのスクリーンショットをアップロードして5枚の数字とTARGETを自動認識し、5枚すべてを使い切る解法パターンを意外性・芸術性順にソートして一覧表示するソルバー",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
