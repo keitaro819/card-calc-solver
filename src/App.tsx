@@ -5,7 +5,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Solution } from './types.ts';
-import { solveGameAllCardsOnly } from './solver.ts';
+import { solveGameAllCardsOnly, evaluatePuzzleDifficulty } from './solver.ts';
 import { ScreenshotUploader } from './components/ScreenshotUploader.tsx';
 import { AllCardsSolutionsList } from './components/AllCardsSolutionsList.tsx';
 import { StepSimulator } from './components/StepSimulator.tsx';
@@ -168,13 +168,28 @@ export default function App() {
               </div>
 
               {/* Status summary pill */}
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+              <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span className="text-slate-500 font-mono">
                   [{cards.map((c) => (c === '' ? '-' : c)).join(', ')}]
                 </span>
-                <span className="text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full font-bold">
-                  {allCardSolutions.length} 通り
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {typeof target === 'number' &&
+                    target > 0 &&
+                    cards.filter((c) => typeof c === 'number' && c > 0).length === 5 && (() => {
+                      const diff = evaluatePuzzleDifficulty(allCardSolutions.length, true);
+                      return diff ? (
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${diff.badgeBg}`}
+                          title={diff.description}
+                        >
+                          {diff.label}
+                        </span>
+                      ) : null;
+                    })()}
+                  <span className="text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full font-bold">
+                    {allCardSolutions.length} 通り
+                  </span>
+                </div>
               </div>
             </div>
           </div>

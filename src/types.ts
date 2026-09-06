@@ -42,6 +42,15 @@ export interface Solution {
   artistry?: ArtistryInfo;
 }
 
+export interface PuzzleDifficultyInfo {
+  label: string; // '最難関' | '難問' | '上級' | '中級' | '初級' | '解なし'
+  stars: number; // 0 - 5
+  description: string;
+  badgeBg: string;
+  textColor: string;
+  borderColor: string;
+}
+
 export type Difficulty = '初級' | '中級' | '上級' | 'カスタム';
 
 export interface PuzzleConfig {

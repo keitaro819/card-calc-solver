@@ -1,6 +1,6 @@
-import { Operator, StepRecord, Solution, ArtistryInfo } from './types.ts';
+import { Operator, StepRecord, Solution, ArtistryInfo, PuzzleDifficultyInfo } from './types.ts';
 
-export type { Operator, StepRecord, Solution, ArtistryInfo };
+export type { Operator, StepRecord, Solution, ArtistryInfo, PuzzleDifficultyInfo };
 
 interface AST {
   type: 'num' | 'add' | 'mul';
@@ -263,120 +263,88 @@ export function evaluateArtistry(sol: Omit<Solution, 'artistry'>): ArtistryInfo 
   const reasons: string[] = [];
 
   // Intermediate values and peak value
-  const results = sol.steps.map((st) => st.result);
-  const peakVal = results.length > 0 ? Math.max(...results) : 0;
+  const allValues = sol.steps.flatMap((st) => [st.leftValue, st.rightValue, st.result]);
+  const peakVal = allValues.length > 0 ? Math.max(...allValues) : 0;
 
-  // 1. [最高峰の芸術性] 3桁（>= 100）にしてから除算するパターン
-  // TARGET <= 99, cards <= 9 なので、途中で3桁（144等）を作ってから除算で落とし込むのは最高峰の妙技
-  const threeDigitDivSteps = sol.steps.filter(
-    (st) => st.operator === '÷' && (st.leftValue >= 100 || peakVal >= 100) && st.rightValue > 1
-  );
+  // 1. [最高峰の芸術性] 3桁除算: 100以上の数を直接除算（÷2以上）するパターン (+45点)
   const directThreeDigitDiv = sol.steps.find(
     (st) => st.operator === '÷' && st.leftValue >= 100 && st.rightValue > 1
   );
 
   if (directThreeDigitDiv) {
     score += 45;
-    tags.push(`3桁除算 (${directThreeDigitDiv.leftValue}÷${directThreeDigitDiv.rightValue})`);
+    tags.push(`3桁除算 (${directThreeDigitDiv.leftValue}÷${directThreeDigitDiv.rightValue}=${directThreeDigitDiv.result})`);
     reasons.push(
-      `初期カードから3桁（${directThreeDigitDiv.leftValue}）まで数値を大きく飛躍させ、そこから鮮やかな除算で目標値へ着地する最高峰の芸術解法`
+      `3桁（${directThreeDigitDiv.leftValue}）まで数値を大きく飛躍させ、そこから直接割り算で目標値へ収束させる最高峰の芸術解法`
     );
-  } else if (peakVal >= 100 && threeDigitDivSteps.length > 0) {
-    const divStep = threeDigitDivSteps[0];
-    score += 40;
-    tags.push(`3桁経由除算 (ピーク${peakVal})`);
-    reasons.push(
-      `計算途中で3桁（${peakVal}）に達した後、除算（÷${divStep.rightValue}）を絡めて目標値へ鮮やかに着地`
-    );
-  } else if (peakVal >= 100) {
-    // 3桁に達したが除算ではない場合の大胆な迂回
-    score += 18;
+  }
+
+  // 2. 左右対称ツリー構造: (A op B) OP (C op D) の並行計算 (+30点)
+  if (sol.steps.length >= 3) {
+    const s1 = sol.steps[0];
+    const s2 = sol.steps[1];
+    const isParallel =
+      s2.leftValue !== s1.result && s2.rightValue !== s1.result && s2.result !== s1.result;
+    if (isParallel) {
+      score += 30;
+      tags.push('左右対称ツリー構造');
+      reasons.push('左右2組のカードを並行して計算し、最後に合体させる左右対称ツリー構造');
+    }
+  }
+
+  // 3. 3桁到達: 計算途中で100以上の数値を作る（除算なしの迂回 +20点）
+  if (peakVal >= 100 && !directThreeDigitDiv) {
+    score += 20;
     tags.push(`3桁到達 (${peakVal})`);
     reasons.push(`初期カード（9以下）から3桁（${peakVal}）まで数値を大胆に引き上げてから着地`);
-  } else if (peakVal > sol.target * 1.3 && peakVal >= 30) {
+  } else if (peakVal > sol.target * 1.3 && peakVal >= 30 && !directThreeDigitDiv) {
     score += 10;
     tags.push(`大胆な迂回 (${peakVal})`);
     reasons.push(`目標値を超える中間値 (${peakVal}) を作ってから着地する迂回ルート`);
   }
 
-  // 2. [0の生成] 自前で 0 を作り出すこと（A - A = 0 など）には多少の価値（+8点）
-  // ※ +0 や -0 の演算自体には加点しない（差が出ないよう等価扱い）
-  const zeroGenStep = sol.steps.find(
-    (st) => st.result === 0 && (st.operator === '-' || st.operator === '×') && st.leftValue > 0
-  );
-  if (zeroGenStep) {
-    score += 8;
-    tags.push('0の生成 (相殺)');
-    reasons.push(`同数減算（${zeroGenStep.leftValue}-${zeroGenStep.rightValue}=0）等により意図的に0を創出し、余分な手札を中立化`);
-  }
-
-  // 3. [1の生成] 自前で 1 を作り出すこと（N ÷ N = 1 や差による1）には多少の価値（+10点）
-  // ※ ×1 や ÷1 の恒等演算自体には加点しない（差が出ないよう等価扱い）
-  const unitDivStep = sol.steps.find(
-    (st) => st.operator === '÷' && st.leftValue === st.rightValue && st.leftValue > 1
-  );
-  const unitDiffStep = sol.steps.find(
-    (st) => st.operator === '-' && st.result === 1 && st.leftValue > 1 && st.rightValue > 1
-  );
-  if (unitDivStep) {
-    score += 10;
-    tags.push('1の生成 (N÷N)');
-    reasons.push(`同数除算（${unitDivStep.leftValue}÷${unitDivStep.rightValue}=1）により意図的に「1」を創出して活用`);
-  } else if (unitDiffStep) {
-    score += 6;
-    tags.push('1の生成 (差)');
-    reasons.push(`引き算（${unitDiffStep.leftValue}-${unitDiffStep.rightValue}=1）により意図的に「1」を創出して活用`);
-  }
-
-  // 4. 九九超えの掛け算 (合成した2桁以上の数同士の掛け算)
+  // 4. 12以上と2以上の掛け算 (最大+20点、区別なし)
   const mulBigs: string[] = [];
   let mulBonus = 0;
   for (const st of sol.steps) {
     if (st.operator === '×') {
       const a = st.leftValue;
       const b = st.rightValue;
-      if (a >= 2 && b >= 2 && (a >= 10 || b >= 10)) {
+      if ((a >= 12 && b >= 2) || (b >= 12 && a >= 2)) {
         mulBigs.push(`${a}×${b}`);
-        mulBonus += a >= 20 || b >= 20 ? 18 : 12;
-        if (a >= 10 && b >= 10) mulBonus += 10;
+        mulBonus += 15;
       }
     }
   }
   if (mulBigs.length > 0) {
-    score += Math.min(30, mulBonus);
-    tags.push(`九九超え (${mulBigs.join(', ')})`);
-    reasons.push(`九九(9×9)を超える掛け算 (${mulBigs.join(', ')}) を巧みに活用`);
+    score += Math.min(20, mulBonus);
+    tags.push(`大数乗算 (${mulBigs.join(', ')})`);
+    reasons.push(`12以上と2以上の掛け算 (${mulBigs.join(', ')}) を活用`);
   }
 
-  // 5. 通常の巧みな除算（3桁除算や同数除算以外の、2以上の割る数による除算）
-  const regularDivSteps = sol.steps.filter(
-    (st) =>
-      st.operator === '÷' &&
-      st.rightValue > 1 &&
-      st.leftValue !== st.rightValue &&
-      st.leftValue < 100
+  // 5. 0の生成: すべて +5点
+  const zeroGenStep = sol.steps.find(
+    (st) => st.result === 0 && st.leftValue > 0
   );
-  if (regularDivSteps.length > 0 && !directThreeDigitDiv) {
-    score += 10;
-    tags.push('巧みな除算');
-    reasons.push('余りの出ない割り算による鮮やかな縮約');
+  if (zeroGenStep) {
+    score += 5;
+    tags.push('0の生成');
+    reasons.push(`計算の過程で自前で「0」を創出（${zeroGenStep.leftValue}${zeroGenStep.operator}${zeroGenStep.rightValue}=0）`);
   }
 
-  // 6. Operator diversity
+  // 6. 1の生成: すべて +5点
+  const unitGenStep = sol.steps.find(
+    (st) => st.result === 1 && st.leftValue > 1 && st.rightValue > 1
+  );
+  if (unitGenStep) {
+    score += 5;
+    tags.push('1の生成');
+    reasons.push(`計算の過程で自前で「1」を創出（${unitGenStep.leftValue}${unitGenStep.operator}${unitGenStep.rightValue}=1）`);
+  }
+
+  // 7. 演算子の多様性 (無意味な+0/-0、×1/÷1の水増しを排除した実質演算子数)
   // Group +0 and -0 as equivalent additive identity ('identity_zero') so they do not differentiate or inflate count
   // Group ×1 and ÷1 as equivalent multiplicative identity ('identity_one') so they do not differentiate or inflate count
-  const opCategories = new Set<string>();
-  for (const st of sol.steps) {
-    if (isZeroIdentityStep(st)) {
-      opCategories.add('identity_zero');
-    } else if (isOneIdentityStep(st)) {
-      opCategories.add('identity_one');
-    } else {
-      opCategories.add(st.operator);
-    }
-  }
-
-  // Count substantial arithmetic operators (excluding pure identity pass-through)
   const substantialOps = new Set(
     sol.steps
       .filter((st) => !isZeroIdentityStep(st) && !isOneIdentityStep(st))
@@ -391,46 +359,30 @@ export function evaluateArtistry(sol: Omit<Solution, 'artistry'>): ArtistryInfo 
     score += 10;
     tags.push('3種演算融合');
     reasons.push('3種類の実質的な演算を柔軟に組み合わせて計算');
-  } else if (opCategories.size === 1) {
-    const only = Array.from(opCategories)[0];
+  } else if (substantialOps.size === 1) {
+    const only = Array.from(substantialOps)[0];
     if (only === '+' || only === '×') {
       score -= 10;
-      reasons.push('単純な同種演算子の反復');
+      tags.push('単一演算');
+      reasons.push(`同一の演算（${only}）のみを使用した単調な組み立て`);
     }
   }
 
-  // 7. Tree structure (parallel pairs calculation)
-  if (sol.steps.length >= 3) {
-    const s1 = sol.steps[0];
-    const s2 = sol.steps[1];
-    if (s2.leftValue !== s1.result && s2.rightValue !== s1.result) {
-      score += 10;
-      tags.push('左右並行構造');
-      reasons.push('2つのグループを個別に組み立てて合体させる高度な対称構造');
-    }
-  }
+  // Clamp score between 0 and 100
+  score = Math.max(0, Math.min(100, score));
 
-  // Clamp (5 - 100)
-  score = Math.max(5, Math.min(100, score));
-
-  // Grade & Stars
-  let grade: 'S' | 'A' | 'B' | 'C' | 'D';
-  let stars: number;
-  if (score >= 85) {
+  // Determine grade and stars
+  let grade: 'S' | 'A' | 'B' | 'C' = 'C';
+  let stars = 2;
+  if (score >= 70) {
     grade = 'S';
     stars = 5;
-  } else if (score >= 70) {
+  } else if (score >= 50) {
     grade = 'A';
     stars = 4;
-  } else if (score >= 50) {
+  } else if (score >= 35) {
     grade = 'B';
     stars = 3;
-  } else if (score >= 30) {
-    grade = 'C';
-    stars = 2;
-  } else {
-    grade = 'D';
-    stars = 1;
   }
 
   return { score, stars, grade, tags, reasons };
@@ -615,4 +567,80 @@ export function solveGame(initialNumbers: number[], target: number): Solution[] 
 export function solveGameAllCardsOnly(initialNumbers: number[], target: number): Solution[] {
   const all = solveGame(initialNumbers, target);
   return all.filter((s) => s.usesAllCards);
+}
+
+/**
+ * Evaluates the inherent difficulty of the puzzle based on the number of solutions found.
+ * Rule: A problem with only 1 solution is the most difficult (rare unique path),
+ * while problems with dozens of solutions are easier.
+ */
+export function evaluatePuzzleDifficulty(
+  solutionsCount: number,
+  isConfigured: boolean
+): PuzzleDifficultyInfo | null {
+  if (!isConfigured) return null;
+
+  if (solutionsCount === 0) {
+    return {
+      label: '解なし',
+      stars: 0,
+      description: '全5枚のカードを使った解法が存在しません',
+      badgeBg: 'bg-slate-200 text-slate-700',
+      textColor: 'text-slate-600',
+      borderColor: 'border-slate-300',
+    };
+  }
+
+  if (solutionsCount === 1) {
+    return {
+      label: '最難関',
+      stars: 5,
+      description: 'たった1通りしか解法が存在しない超難問！',
+      badgeBg: 'bg-rose-600 text-white shadow-xs',
+      textColor: 'text-rose-800',
+      borderColor: 'border-rose-300',
+    };
+  }
+
+  if (solutionsCount <= 3) {
+    return {
+      label: '難問',
+      stars: 4,
+      description: `解法がわずか ${solutionsCount} 通りしかない高難度問題`,
+      badgeBg: 'bg-orange-500 text-white shadow-xs',
+      textColor: 'text-orange-800',
+      borderColor: 'border-orange-300',
+    };
+  }
+
+  if (solutionsCount <= 10) {
+    return {
+      label: '上級',
+      stars: 3,
+      description: `解法は ${solutionsCount} 通り。適度な工夫と試行錯誤が必要`,
+      badgeBg: 'bg-amber-500 text-white shadow-xs',
+      textColor: 'text-amber-800',
+      borderColor: 'border-amber-300',
+    };
+  }
+
+  if (solutionsCount <= 30) {
+    return {
+      label: '中級',
+      stars: 2,
+      description: `解法は ${solutionsCount} 通り。標準的な難易度`,
+      badgeBg: 'bg-blue-600 text-white shadow-xs',
+      textColor: 'text-blue-800',
+      borderColor: 'border-blue-300',
+    };
+  }
+
+  return {
+    label: '初級',
+    stars: 1,
+    description: `解法が ${solutionsCount} 通りあり、アプローチしやすい入門問題`,
+    badgeBg: 'bg-emerald-600 text-white shadow-xs',
+    textColor: 'text-emerald-800',
+    borderColor: 'border-emerald-300',
+  };
 }

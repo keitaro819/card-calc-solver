@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Solution, Operator } from '../types.ts';
+import { Solution, Operator, PuzzleDifficultyInfo } from '../types.ts';
+import { evaluatePuzzleDifficulty } from '../solver.ts';
 import {
   Search,
   Copy,
@@ -11,6 +12,7 @@ import {
   Layers,
   Info,
   Flame,
+  HelpCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -42,6 +44,13 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
     typeof target === 'number' &&
     target > 0 &&
     initialCards.filter((c): c is number => typeof c === 'number' && c > 0).length === 5;
+
+  const [showDifficultyHelp, setShowDifficultyHelp] = useState(false);
+
+  // Calculate difficulty of this specific puzzle based on solution count
+  const puzzleDifficulty = useMemo(() => {
+    return evaluatePuzzleDifficulty(solutions.length, isInputConfigured);
+  }, [solutions.length, isInputConfigured]);
 
   // Toggle accordion for steps
   const toggleExpand = (id: string) => {
@@ -189,35 +198,46 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
 
   // Helper for tag chips styling
   const getTagBadge = (tag: string) => {
-    if (tag.includes('0の活用')) {
+    if (tag.includes('3桁除算')) {
       return (
         <span
           key={tag}
-          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-800 border border-cyan-200 flex items-center gap-0.5"
+          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500 text-white shadow-2xs flex items-center gap-0.5"
         >
-          <span>🌀</span>
+          <span>👑</span>
           {tag}
         </span>
       );
     }
-    if (tag.includes('1の活用')) {
+    if (tag.includes('左右対称') || tag.includes('ツリー')) {
       return (
         <span
           key={tag}
-          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200 flex items-center gap-0.5"
+          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-300 flex items-center gap-0.5"
         >
-          <span>⚖️</span>
+          <span>🌲</span>
           {tag}
         </span>
       );
     }
-    if (tag.includes('九九超え')) {
+    if (tag.includes('3桁到達') || tag.includes('迂回')) {
+      return (
+        <span
+          key={tag}
+          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 flex items-center gap-0.5"
+        >
+          <span>⚡</span>
+          {tag}
+        </span>
+      );
+    }
+    if (tag.includes('大数乗算')) {
       return (
         <span
           key={tag}
           className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-0.5"
         >
-          <span>🎯</span>
+          <span>✖️</span>
           {tag}
         </span>
       );
@@ -226,7 +246,7 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
       return (
         <span
           key={tag}
-          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-0.5"
+          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200 flex items-center gap-0.5"
         >
           <span>🔀</span>
           {tag}
@@ -244,24 +264,24 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
         </span>
       );
     }
-    if (tag.includes('除算') || tag.includes('1の生成')) {
+    if (tag.includes('0の生成')) {
+      return (
+        <span
+          key={tag}
+          className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-800 border border-cyan-200 flex items-center gap-0.5"
+        >
+          <span>🌀</span>
+          {tag}
+        </span>
+      );
+    }
+    if (tag.includes('1の生成')) {
       return (
         <span
           key={tag}
           className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-0.5"
         >
-          <span>÷</span>
-          {tag}
-        </span>
-      );
-    }
-    if (tag.includes('迂回')) {
-      return (
-        <span
-          key={tag}
-          className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-0.5"
-        >
-          <span>⚡</span>
+          <span>✨</span>
           {tag}
         </span>
       );
@@ -281,11 +301,38 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
       {/* List Header Bar */}
       <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <h3 className="font-bold text-base text-slate-800">解法一覧</h3>
             <span className="bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold px-2 py-0.5 rounded-full">
               {solutions.length} 通り
             </span>
+
+            {/* Problem Difficulty Badge */}
+            {puzzleDifficulty && (
+              <div
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs bg-slate-50/80 ${puzzleDifficulty.borderColor}`}
+                title={puzzleDifficulty.description}
+              >
+                <span className="text-[11px] font-semibold text-slate-500">難易度:</span>
+                <span className={`px-1.5 py-0.5 rounded font-bold text-[11px] ${puzzleDifficulty.badgeBg}`}>
+                  {puzzleDifficulty.label}
+                </span>
+                {puzzleDifficulty.stars > 0 && (
+                  <span className="text-amber-500 font-mono tracking-tighter text-xs">
+                    {'★'.repeat(puzzleDifficulty.stars)}
+                    {'☆'.repeat(Math.max(0, 5 - puzzleDifficulty.stars))}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowDifficultyHelp((prev) => !prev)}
+                  className="text-slate-400 hover:text-slate-700 ml-0.5 p-0.5 rounded hover:bg-slate-200/60 transition-colors"
+                  title="難易度の基準とは？"
+                >
+                  <HelpCircle className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -320,6 +367,93 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
           </div>
         </div>
 
+        {/* Problem Difficulty Criteria Collapsible Box */}
+        <AnimatePresence>
+          {showDifficultyHelp && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="bg-indigo-50/80 border border-indigo-200 rounded-lg p-3 text-xs text-indigo-950 space-y-2.5">
+                <div className="flex items-center justify-between font-bold text-indigo-900 border-b border-indigo-200/60 pb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <Flame className="w-4 h-4 text-indigo-600" />
+                    問題難易度の判定基準（解答パターン数に基づく判定）
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowDifficultyHelp(false)}
+                    className="text-indigo-700 hover:text-indigo-950 font-bold px-2 py-0.5 rounded bg-indigo-100/80 hover:bg-indigo-200 transition-colors text-[11px]"
+                  >
+                    閉じる
+                  </button>
+                </div>
+                <p className="text-xs text-indigo-900/90 leading-relaxed">
+                  解法パターン数が少ない問題ほど、限られた唯一無二の計算ルートを見抜くひらめきが必要となるため、<strong>1通りの問題が最も難易度が高く（最難関）</strong>なります。
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                  <div className="bg-white/90 rounded-lg p-2 border border-rose-200 shadow-2xs">
+                    <div className="font-bold text-rose-900 flex items-center justify-between">
+                      <span>最難関 ★★★★★</span>
+                      <span className="text-rose-700 font-mono font-bold text-[11px] bg-rose-100 px-1.5 py-0.2 rounded">1通り</span>
+                    </div>
+                    <p className="text-slate-600 text-[11px] mt-1">
+                      正解がたった1つしかない超難問。高度なひらめきと計算力が必要。
+                    </p>
+                  </div>
+                  <div className="bg-white/90 rounded-lg p-2 border border-orange-200 shadow-2xs">
+                    <div className="font-bold text-orange-900 flex items-center justify-between">
+                      <span>難問 ★★★★☆</span>
+                      <span className="text-orange-700 font-mono font-bold text-[11px] bg-orange-100 px-1.5 py-0.2 rounded">2〜3通り</span>
+                    </div>
+                    <p className="text-slate-600 text-[11px] mt-1">
+                      解法がごくわずかしか存在しない高難度問題。
+                    </p>
+                  </div>
+                  <div className="bg-white/90 rounded-lg p-2 border border-amber-200 shadow-2xs">
+                    <div className="font-bold text-amber-900 flex items-center justify-between">
+                      <span>上級 ★★★☆☆</span>
+                      <span className="text-amber-700 font-mono font-bold text-[11px] bg-amber-100 px-1.5 py-0.2 rounded">4〜10通り</span>
+                    </div>
+                    <p className="text-slate-600 text-[11px] mt-1">
+                      解法パターンが限られており、適度な試行錯誤が必要。
+                    </p>
+                  </div>
+                  <div className="bg-white/90 rounded-lg p-2 border border-blue-200 shadow-2xs">
+                    <div className="font-bold text-blue-900 flex items-center justify-between">
+                      <span>中級 ★★☆☆☆</span>
+                      <span className="text-blue-700 font-mono font-bold text-[11px] bg-blue-100 px-1.5 py-0.2 rounded">11〜30通り</span>
+                    </div>
+                    <p className="text-slate-600 text-[11px] mt-1">
+                      複数のアプローチが存在する標準的な難易度。
+                    </p>
+                  </div>
+                  <div className="bg-white/90 rounded-lg p-2 border border-emerald-200 shadow-2xs">
+                    <div className="font-bold text-emerald-900 flex items-center justify-between">
+                      <span>初級 ★☆☆☆☆</span>
+                      <span className="text-emerald-700 font-mono font-bold text-[11px] bg-emerald-100 px-1.5 py-0.2 rounded">31通り〜</span>
+                    </div>
+                    <p className="text-slate-600 text-[11px] mt-1">
+                      解法が豊富で解きやすい入門レベルの問題。
+                    </p>
+                  </div>
+                  <div className="bg-white/90 rounded-lg p-2 border border-slate-200 shadow-2xs">
+                    <div className="font-bold text-slate-700 flex items-center justify-between">
+                      <span>解なし</span>
+                      <span className="text-slate-600 font-mono font-bold text-[11px] bg-slate-100 px-1.5 py-0.2 rounded">0通り</span>
+                    </div>
+                    <p className="text-slate-600 text-[11px] mt-1">
+                      全5枚のカードを使用した解法が存在しない問題。
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Artistry Criteria Collapsible Info Box */}
         <AnimatePresence>
           {showArtistryCriteria && (
@@ -329,69 +463,81 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <div className="bg-amber-50/70 border border-amber-200 rounded-lg p-3 text-xs text-amber-950 space-y-2">
+              <div className="bg-amber-50/80 border border-amber-200 rounded-lg p-3 text-xs text-amber-950 space-y-2.5">
                 <div className="flex items-center justify-between font-bold text-amber-900 border-b border-amber-200/60 pb-1.5">
                   <span className="flex items-center gap-1.5">
                     <Sparkles className="w-4 h-4 text-amber-600" />
-                    解法の「芸術性」判断基準
+                    解法の「芸術性」採点基準（基礎点: 15点 / 最大: 100点）
                   </span>
                   <button
                     type="button"
                     onClick={() => setShowArtistryCriteria(false)}
-                    className="text-amber-700 hover:text-amber-900 text-[11px]"
+                    className="text-amber-700 hover:text-amber-950 font-bold px-2 py-0.5 rounded bg-amber-100/80 hover:bg-amber-200 transition-colors text-[11px]"
                   >
                     閉じる
                   </button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 leading-relaxed">
-                  <div className="bg-white/80 rounded p-2 border border-amber-200/50">
-                    <div className="font-bold text-amber-900 flex items-center gap-1">
-                      <span>🌀</span> 0の活用 (加減算は等価 ★★★★★)
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  手札（9以下）からあえて100以上の大きな数を作ってから割る鮮やかな解法や、美しい計算ツリー構造を高く評価しています。
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div className="bg-white/90 rounded-lg p-2 border border-amber-200/70 shadow-2xs">
+                    <div className="font-bold text-amber-950 flex items-center justify-between">
+                      <span>👑 3桁除算（最高峰）</span>
+                      <span className="text-amber-700 font-bold font-mono text-[11px] bg-amber-100 px-1.5 py-0.2 rounded">+45点</span>
                     </div>
-                    <p className="text-slate-600 text-[11px] mt-0.5">
-                      `A - A = 0` などを生成し、手札にない「0」を経由して相殺。<strong>0の加算（+0）と減算（-0）は等価</strong>として同じ芸術性で高く評価。
+                    <p className="text-slate-600 text-[11px] mt-1">
+                      計算途中で100以上の数を作り、直接割り算（÷2以上）で目標値へ収束させる最高峰の妙技（例: 144÷2）。
                     </p>
                   </div>
-                  <div className="bg-white/80 rounded p-2 border border-amber-200/50">
-                    <div className="font-bold text-amber-900 flex items-center gap-1">
-                      <span>⚖️</span> 1の活用 (乗除算は等価 ★★★★☆)
+                  <div className="bg-white/90 rounded-lg p-2 border border-amber-200/70 shadow-2xs">
+                    <div className="font-bold text-amber-950 flex items-center justify-between">
+                      <span>🌲 左右対称ツリー構造</span>
+                      <span className="text-amber-700 font-bold font-mono text-[11px] bg-amber-100 px-1.5 py-0.2 rounded">+30点</span>
                     </div>
-                    <p className="text-slate-600 text-[11px] mt-0.5">
-                      単位元「1」を活用して値を保ちながら手札をスマートに消化。<strong>1の乗算（×1）と除算（÷1）は等価</strong>として同じ芸術性で評価。
+                    <p className="text-slate-600 text-[11px] mt-1">
+                      (AとB) と (CとD) を左右並行で同時に計算し、最後に真ん中で合体させる美しいツリー構造。
                     </p>
                   </div>
-                  <div className="bg-white/80 rounded p-2 border border-amber-200/50">
-                    <div className="font-bold text-amber-900 flex items-center gap-1">
-                      <span>🎯</span> 九九超えの掛け算 (難易度 ★★★★☆)
+                  <div className="bg-white/90 rounded-lg p-2 border border-amber-200/70 shadow-2xs">
+                    <div className="font-bold text-amber-950 flex items-center justify-between">
+                      <span>⚡ 3桁到達（迂回）</span>
+                      <span className="text-amber-700 font-bold font-mono text-[11px] bg-amber-100 px-1.5 py-0.2 rounded">+20点</span>
                     </div>
-                    <p className="text-slate-600 text-[11px] mt-0.5">
-                      九九(9×9)の範囲を超える掛け算（`13×7`, `24×3`, `14×5`, `18×4` 等）を駆使する解法（※×1や×0は除外）。
+                    <p className="text-slate-600 text-[11px] mt-1">
+                      初期カード（9以下）から計算の途中で100以上の大きな数へ大胆に引き上げてから着地するルート。
                     </p>
                   </div>
-                  <div className="bg-white/80 rounded p-2 border border-amber-200/50">
-                    <div className="font-bold text-amber-900 flex items-center gap-1">
-                      <span>🔀</span> 演算構造の多様性・融合
+                  <div className="bg-white/90 rounded-lg p-2 border border-amber-200/70 shadow-2xs">
+                    <div className="font-bold text-amber-950 flex items-center justify-between">
+                      <span>✖️ 12以上×2以上の掛け算</span>
+                      <span className="text-amber-700 font-bold font-mono text-[11px] bg-amber-100 px-1.5 py-0.2 rounded">最大+20点</span>
                     </div>
-                    <p className="text-slate-600 text-[11px] mt-0.5">
-                      加減乗除（+ - × ÷）や相殺構造の3〜4種を柔軟に組み合わせるパターン。単一演算子のみの連続は芸術点が低くなります。
+                    <p className="text-slate-600 text-[11px] mt-1">
+                      合成した12以上の数と2以上の数を掛け合わせるダイナミックな掛け算（1回につき+15点）。
                     </p>
                   </div>
-                  <div className="bg-white/80 rounded p-2 border border-amber-200/50">
-                    <div className="font-bold text-amber-900 flex items-center gap-1">
-                      <span>÷</span> 巧みな除算・1の生成
+                  <div className="bg-white/90 rounded-lg p-2 border border-amber-200/70 shadow-2xs">
+                    <div className="font-bold text-amber-950 flex items-center justify-between">
+                      <span>🎨 演算子の多様性</span>
+                      <span className="text-amber-700 font-bold font-mono text-[11px] bg-amber-100 px-1.5 py-0.2 rounded">+10〜20点</span>
                     </div>
-                    <p className="text-slate-600 text-[11px] mt-0.5">
-                      余りの出ない割り算による鮮やかな縮約や、同数除算（`N ÷ N = 1`）による1の生成を評価。
+                    <p className="text-slate-600 text-[11px] mt-1">
+                      加減乗除の4種すべてを融合（+20点）または3種融合（+10点）。※単一演算のみは -10点。
                     </p>
                   </div>
-                  <div className="bg-white/80 rounded p-2 border border-amber-200/50">
-                    <div className="font-bold text-amber-900 flex items-center gap-1">
-                      <span>⚡</span> 大胆な迂回・対称構造
+                  <div className="bg-white/90 rounded-lg p-2 border border-amber-200/70 shadow-2xs">
+                    <div className="font-bold text-amber-950 flex items-center justify-between">
+                      <span>✨ 0・1の意図的な生成</span>
+                      <span className="text-amber-700 font-bold font-mono text-[11px] bg-amber-100 px-1.5 py-0.2 rounded">各+5点</span>
                     </div>
-                    <p className="text-slate-600 text-[11px] mt-0.5">
-                      目標値より大幅に大きな中間値を作ってから着地するルートや、左右並行の対称ツリー構造を評価。
+                    <p className="text-slate-600 text-[11px] mt-1">
+                      引き算や割り算（N÷N）で自前で「0」や「1」を作り出し、余剰手札の整理に活用する工夫。
                     </p>
                   </div>
+                </div>
+                <div className="text-[11px] text-amber-900/90 bg-amber-100/70 border border-amber-200/80 rounded-md px-2.5 py-1.5 mt-1">
+                  💡 <strong>等価ルール</strong>：「+0 と -0」「×1 と ÷1」は等価として扱い、それ自体によるスコアの差や加点はありません。
                 </div>
               </div>
             </motion.div>
@@ -448,7 +594,7 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="数式やタグ(例: 3桁除算, 九九超え)..."
+              placeholder="数式やタグ(例: 3桁除算, 大数乗算, 並行ツリー)..."
               className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
             />
           </div>
