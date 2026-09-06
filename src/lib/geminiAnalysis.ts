@@ -2,9 +2,11 @@ import { GoogleGenAI, Type } from '@google/genai';
 
 // Candidate models in order of resilience and capacity
 const CANDIDATE_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-flash-latest',
+  'gemini-2.5-flash-lite',
   'gemini-3.1-flash-lite',
   'gemini-3.8-flash',
-  'gemini-flash-latest',
 ];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -20,8 +22,9 @@ export async function analyzeScreenshotWithGemini(
   imageBase64: string,
   mimeType: string = 'image/png'
 ): Promise<AnalysisResult> {
+  const cleanApiKey = apiKey.trim().replace(/^["']|["']$/g, '');
   const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9+]+;base64,/, '');
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: cleanApiKey });
 
   const prompt = `You are an expert game screen recognition AI.
 Analyze this card arithmetic puzzle screenshot.

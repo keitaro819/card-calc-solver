@@ -175,7 +175,10 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
         if (data && data.error) {
           throw new Error(data.error);
         }
-        throw new Error('画像の読み取りに失敗しました。下の入力欄から直接数値を入力してください。');
+        if (response.status === 404) {
+          throw new Error('APIサーバー（/api/analyze-screenshot）が見つかりません (404)。下の入力欄から直接数値を入力してください。');
+        }
+        throw new Error(`サーバーとの通信でエラーが発生しました (HTTP ${response.status})。下の入力欄から直接数値を入力してください。`);
       }
 
       if (!data || !data.success) {
