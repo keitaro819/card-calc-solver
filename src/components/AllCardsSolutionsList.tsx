@@ -514,7 +514,7 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
                       <span className="text-amber-700 font-bold font-mono text-[11px] bg-amber-100 px-1.5 py-0.2 rounded">最大+20点</span>
                     </div>
                     <p className="text-slate-600 text-[11px] mt-1">
-                      合成した12以上の数と2以上の数を掛け合わせるダイナミックな掛け算（1回につき+15点）。
+                      掛ける順序によらず12以上×2以上が不可避となる掛け算（1組につき+15点）。※掛ける順序によって12未満同士に回避できる場合（例: 2×2×9を4×9として計算可能）は加点対象外。
                     </p>
                   </div>
                   <div className="bg-white/90 rounded-lg p-2 border border-amber-200/70 shadow-2xs">

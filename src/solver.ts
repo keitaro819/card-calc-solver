@@ -243,6 +243,127 @@ export function isOneIdentityStep(st: StepRecord): boolean {
 }
 
 /**
+ * Checks whether a given list of factors can be multiplied together in some order
+ * such that NO step performs a multiplication of (>=12 and >=2).
+ * If at least one such safe order exists, returns true (the big multiplication can be avoided).
+ * If no such order exists (big multiplication is unavoidable), returns false.
+ */
+export function canAvoidBigMultiplication(factors: number[]): boolean {
+  if (factors.length <= 1) return true;
+
+  const n = factors.length;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const a = factors[i];
+      const b = factors[j];
+
+      // Check if multiplying a and b avoids "12以上×2以上"
+      const isBigMul = (a >= 12 && b >= 2) || (b >= 12 && a >= 2);
+      if (!isBigMul) {
+        const nextFactors: number[] = [];
+        for (let k = 0; k < n; k++) {
+          if (k !== i && k !== j) nextFactors.push(factors[k]);
+        }
+        nextFactors.push(a * b);
+
+        if (canAvoidBigMultiplication(nextFactors)) {
+          return true; // Found at least one safe order
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Recursively collects factor lists from multiplication subtrees in an AST.
+ */
+export function collectMultiplicationFactorGroups(node: AST): Array<{ factors: number[]; desc: string }> {
+  const groups: Array<{ factors: number[]; desc: string }> = [];
+
+  function traverse(n: AST) {
+    if (n.type === 'add') {
+      (n.posTerms || []).forEach(traverse);
+      (n.negTerms || []).forEach(traverse);
+    } else if (n.type === 'mul') {
+      if (n.numFactors && n.numFactors.length >= 2) {
+        groups.push({
+          factors: n.numFactors.map((f) => f.val),
+          desc: n.numFactors.map((f) => astToString(f)).join(' × '),
+        });
+      }
+      if (n.denFactors && n.denFactors.length >= 2) {
+        groups.push({
+          factors: n.denFactors.map((d) => d.val),
+          desc: n.denFactors.map((d) => astToString(d)).join(' × '),
+        });
+      }
+      (n.numFactors || []).forEach(traverse);
+      (n.denFactors || []).forEach(traverse);
+    }
+  }
+
+  traverse(node);
+  return groups;
+}
+
+/**
+ * Extracts connected multiplication factor groups directly from step history if AST is not provided.
+ */
+function extractFactorGroupsFromSteps(steps: StepRecord[]): number[][] {
+  const valFactors = new Map<number, number[]>(); // stepIndex -> factors array
+  const groups: number[][] = [];
+
+  for (let idx = 0; idx < steps.length; idx++) {
+    const st = steps[idx];
+    if (st.operator === '×') {
+      let leftFactors = [st.leftValue];
+      let rightFactors = [st.rightValue];
+
+      for (let p = idx - 1; p >= 0; p--) {
+        if (steps[p].result === st.leftValue && valFactors.has(p)) {
+          leftFactors = valFactors.get(p)!;
+          break;
+        }
+      }
+      for (let p = idx - 1; p >= 0; p--) {
+        if (steps[p].result === st.rightValue && valFactors.has(p)) {
+          rightFactors = valFactors.get(p)!;
+          break;
+        }
+      }
+
+      const combined = [...leftFactors, ...rightFactors];
+      valFactors.set(idx, combined);
+    }
+  }
+
+  for (let idx = 0; idx < steps.length; idx++) {
+    if (steps[idx].operator === '×') {
+      let isConsumed = false;
+      for (let next = idx + 1; next < steps.length; next++) {
+        if (
+          steps[next].operator === '×' &&
+          (steps[next].leftValue === steps[idx].result || steps[next].rightValue === steps[idx].result)
+        ) {
+          isConsumed = true;
+          break;
+        }
+      }
+      if (!isConsumed) {
+        const factors = valFactors.get(idx);
+        if (factors && factors.length >= 2) {
+          groups.push(factors);
+        }
+      }
+    }
+  }
+
+  return groups;
+}
+
+/**
  * Evaluates the "artistry" (意外性・芸術性・複雑さ) of a solution pattern.
  *
  * Revised Criteria:
@@ -250,14 +371,15 @@ export function isOneIdentityStep(st: StepRecord): boolean {
  *    TARGET<=99、手札<=9のルールにおいて、計算途中で3桁（144など）へ跳ね上げ、
  *    そこから除算でTARGETに着地する解法を最高芸術として評価。
  * 2. 0の加算・減算（+0, -0）および1の乗算・除算（×1, ÷1）は、等価なので差が出ないようにし、それ自体への加点は行わない。
- * 3. [0の生成] 同数減算（A - A = 0）等により自前で「0」を作り出すことには多少の価値 (+8点)
- * 4. [1の生成] 同数除算（N ÷ N = 1）等により自前で「1」を作り出すことには多少の価値 (+10点)
- * 5. 九九超えの掛け算 (合成した2桁以上同士の掛け算: +15〜+25点)
- * 6. 大胆な迂回 (3桁到達、または目標値を大きく超える中間値)
- * 7. 演算子の多様性 (無意味な+0/-0、×1/÷1の水増しを排除した実質演算子数)
- * 8. 左右対称ツリー構造
+ * 3. 左右対称ツリー構造: (A op B) OP (C op D) の並行計算 (+30点)
+ * 4. 3桁到達: 計算途中で100以上の数値を作る（除算なしの迂回 +20点）
+ * 5. 12以上×2以上の掛け算 (最大+20点):
+ *    掛ける順序によって12以上×2以上を回避できる場合（例: 2×2×9 を 4×9 として計算可能）は加点対象外。
+ *    どのように掛けても必ず12以上×2以上が発生せざるを得ない場合のみ加点。
+ * 6. 0の生成・1の生成: 自前で「0」または「1」を創出（各+5点）
+ * 7. 演算子の多様性: 4種融合（+20点）、3種融合（+10点）
  */
-export function evaluateArtistry(sol: Omit<Solution, 'artistry'>): ArtistryInfo {
+export function evaluateArtistry(sol: Omit<Solution, 'artistry'>, ast?: AST): ArtistryInfo {
   let score = 15; // base score
   const tags: string[] = [];
   const reasons: string[] = [];
@@ -303,23 +425,28 @@ export function evaluateArtistry(sol: Omit<Solution, 'artistry'>): ArtistryInfo 
     reasons.push(`目標値を超える中間値 (${peakVal}) を作ってから着地する迂回ルート`);
   }
 
-  // 4. 12以上と2以上の掛け算 (最大+20点、区別なし)
-  const mulBigs: string[] = [];
+  // 4. 12以上と2以上の掛け算 (最大+20点、厳格判定)
+  // 掛ける順番によって12以上×2以上を回避できる場合（例: 2×2×9 を 4×9 として計算可能）は加点対象外
+  const factorGroups = ast
+    ? collectMultiplicationFactorGroups(ast).map((g) => g.factors)
+    : extractFactorGroupsFromSteps(sol.steps);
+
+  const unavoidableBigMuls: string[] = [];
   let mulBonus = 0;
-  for (const st of sol.steps) {
-    if (st.operator === '×') {
-      const a = st.leftValue;
-      const b = st.rightValue;
-      if ((a >= 12 && b >= 2) || (b >= 12 && a >= 2)) {
-        mulBigs.push(`${a}×${b}`);
-        mulBonus += 15;
-      }
+
+  for (const factors of factorGroups) {
+    if (!canAvoidBigMultiplication(factors)) {
+      unavoidableBigMuls.push(`${factors.join('×')}`);
+      mulBonus += 15;
     }
   }
-  if (mulBigs.length > 0) {
+
+  if (unavoidableBigMuls.length > 0) {
     score += Math.min(20, mulBonus);
-    tags.push(`大数乗算 (${mulBigs.join(', ')})`);
-    reasons.push(`12以上と2以上の掛け算 (${mulBigs.join(', ')}) を活用`);
+    tags.push(`大数乗算 (${unavoidableBigMuls.join(', ')})`);
+    reasons.push(
+      `掛ける順序によらず12以上×2以上が不可避となる掛け算（${unavoidableBigMuls.join(', ')}）を活用`
+    );
   }
 
   // 5. 0の生成: すべて +5点
@@ -345,11 +472,23 @@ export function evaluateArtistry(sol: Omit<Solution, 'artistry'>): ArtistryInfo 
   // 7. 演算子の多様性 (無意味な+0/-0、×1/÷1の水増しを排除した実質演算子数)
   // Group +0 and -0 as equivalent additive identity ('identity_zero') so they do not differentiate or inflate count
   // Group ×1 and ÷1 as equivalent multiplicative identity ('identity_one') so they do not differentiate or inflate count
-  const substantialOps = new Set(
+  const nonIdentityStepOps = new Set(
     sol.steps
       .filter((st) => !isZeroIdentityStep(st) && !isOneIdentityStep(st))
       .map((st) => st.operator)
   );
+
+  // Combine operators from operatorsUsed and non-identity step records
+  const substantialOps = new Set<Operator>([
+    ...Array.from(nonIdentityStepOps),
+    ...sol.operatorsUsed.filter((op) => {
+      const isIdentityOnly = sol.steps.length > 0 && sol.steps.every((st) => {
+        if (st.operator !== op) return true;
+        return isZeroIdentityStep(st) || isOneIdentityStep(st);
+      });
+      return !isIdentityOnly;
+    }),
+  ]);
 
   if (substantialOps.size >= 4) {
     score += 20;
@@ -410,14 +549,24 @@ export function solveGame(initialNumbers: number[], target: number): Solution[] 
 
         if (!solutionsMap.has(canonicalKey)) {
           const usedValues = item.usedIndices.map((i) => initialNumbers[i]);
+          const expr = astToString(item.ast);
+
+          // Collect all operators that actually appear in the formatted expression or AST
           const ops: Operator[] = [];
+          const standardOps: Operator[] = ['+', '-', '×', '÷'];
+          for (const op of standardOps) {
+            if (expr.includes(op) && !ops.includes(op)) {
+              ops.push(op);
+            }
+          }
+          // Fallback: also ensure any operators from the calculation steps are included
           for (const s of history) {
             if (!ops.includes(s.operator)) ops.push(s.operator);
           }
 
           const partialSol: Omit<Solution, 'artistry'> = {
             id: `sol-${solutionsMap.size + 1}`,
-            expression: astToString(item.ast),
+            expression: expr,
             canonicalFormula: canonical,
             target,
             cardsUsedCount: item.usedIndices.length,
@@ -430,7 +579,7 @@ export function solveGame(initialNumbers: number[], target: number): Solution[] 
 
           solutionsMap.set(canonicalKey, {
             ...partialSol,
-            artistry: evaluateArtistry(partialSol),
+            artistry: evaluateArtistry(partialSol, item.ast),
           });
         }
       }
