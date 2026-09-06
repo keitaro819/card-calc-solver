@@ -244,62 +244,127 @@ export function isOneIdentityStep(st: StepRecord): boolean {
 
 /**
  * Evaluates the "artistry" (意外性・芸術性・複雑さ) of a solution pattern.
- * Criteria:
- * 1. Zero usage: +0 and -0 are treated strictly as equivalent (+35)
- * 2. One usage: ×1 and ÷1 are treated strictly as equivalent (+15)
- * 3. Beyond 9x9 multiplication (e.g. 13×7, 24×3; excluding ×1 and ×0): High score (+16 to +45)
- * 4. Operator diversity: +0 and -0 share the same additive-identity category; ×1 and ÷1 share the same multiplicative-identity category
- * 5. Clever division: substantive integer division where divisor > 1; unit generator N÷N=1 (+12 to +20)
- * 6. Bold detour / Peak value: creating a large number and landing gracefully on target
- * 7. Symmetric tree structure: parallel pairs calculation
+ *
+ * Revised Criteria:
+ * 1. [最高峰の芸術性] 3桁以上（100以上）を経由してからの除算パターン (最も評価が高い: +45点)
+ *    TARGET<=99、手札<=9のルールにおいて、計算途中で3桁（144など）へ跳ね上げ、
+ *    そこから除算でTARGETに着地する解法を最高芸術として評価。
+ * 2. 0の加算・減算（+0, -0）および1の乗算・除算（×1, ÷1）は、等価なので差が出ないようにし、それ自体への加点は行わない。
+ * 3. [0の生成] 同数減算（A - A = 0）等により自前で「0」を作り出すことには多少の価値 (+8点)
+ * 4. [1の生成] 同数除算（N ÷ N = 1）等により自前で「1」を作り出すことには多少の価値 (+10点)
+ * 5. 九九超えの掛け算 (合成した2桁以上同士の掛け算: +15〜+25点)
+ * 6. 大胆な迂回 (3桁到達、または目標値を大きく超える中間値)
+ * 7. 演算子の多様性 (無意味な+0/-0、×1/÷1の水増しを排除した実質演算子数)
+ * 8. 左右対称ツリー構造
  */
 export function evaluateArtistry(sol: Omit<Solution, 'artistry'>): ArtistryInfo {
   let score = 15; // base score
   const tags: string[] = [];
   const reasons: string[] = [];
 
-  // 1. Check for 0 usage (0の加算と減算は等価として評価)
-  const usesZero = sol.steps.some(
-    (st) => st.leftValue === 0 || st.rightValue === 0 || st.result === 0
+  // Intermediate values and peak value
+  const results = sol.steps.map((st) => st.result);
+  const peakVal = results.length > 0 ? Math.max(...results) : 0;
+
+  // 1. [最高峰の芸術性] 3桁（>= 100）にしてから除算するパターン
+  // TARGET <= 99, cards <= 9 なので、途中で3桁（144等）を作ってから除算で落とし込むのは最高峰の妙技
+  const threeDigitDivSteps = sol.steps.filter(
+    (st) => st.operator === '÷' && (st.leftValue >= 100 || peakVal >= 100) && st.rightValue > 1
   );
-  if (usesZero) {
-    score += 35;
-    tags.push('0の活用 (相殺)');
-    reasons.push('0の加減算（+0 / -0）や中間値0を活用し、相殺・中立化マジックを達成');
+  const directThreeDigitDiv = sol.steps.find(
+    (st) => st.operator === '÷' && st.leftValue >= 100 && st.rightValue > 1
+  );
+
+  if (directThreeDigitDiv) {
+    score += 45;
+    tags.push(`3桁除算 (${directThreeDigitDiv.leftValue}÷${directThreeDigitDiv.rightValue})`);
+    reasons.push(
+      `初期カードから3桁（${directThreeDigitDiv.leftValue}）まで数値を大きく飛躍させ、そこから鮮やかな除算で目標値へ着地する最高峰の芸術解法`
+    );
+  } else if (peakVal >= 100 && threeDigitDivSteps.length > 0) {
+    const divStep = threeDigitDivSteps[0];
+    score += 40;
+    tags.push(`3桁経由除算 (ピーク${peakVal})`);
+    reasons.push(
+      `計算途中で3桁（${peakVal}）に達した後、除算（÷${divStep.rightValue}）を絡めて目標値へ鮮やかに着地`
+    );
+  } else if (peakVal >= 100) {
+    // 3桁に達したが除算ではない場合の大胆な迂回
+    score += 18;
+    tags.push(`3桁到達 (${peakVal})`);
+    reasons.push(`初期カード（9以下）から3桁（${peakVal}）まで数値を大胆に引き上げてから着地`);
+  } else if (peakVal > sol.target * 1.3 && peakVal >= 30) {
+    score += 10;
+    tags.push(`大胆な迂回 (${peakVal})`);
+    reasons.push(`目標値を超える中間値 (${peakVal}) を作ってから着地する迂回ルート`);
   }
 
-  // 2. Check for 1 identity usage (1の乗算と除算は等価として評価)
-  const usesOneIdentity = sol.steps.some(isOneIdentityStep);
-  if (usesOneIdentity) {
-    score += 15;
-    tags.push('1の活用 (×1 / ÷1)');
-    reasons.push('1の乗算・除算（×1 / ÷1）を等価に活用し、値を保ったまま手札をスマートに消化');
+  // 2. [0の生成] 自前で 0 を作り出すこと（A - A = 0 など）には多少の価値（+8点）
+  // ※ +0 や -0 の演算自体には加点しない（差が出ないよう等価扱い）
+  const zeroGenStep = sol.steps.find(
+    (st) => st.result === 0 && (st.operator === '-' || st.operator === '×') && st.leftValue > 0
+  );
+  if (zeroGenStep) {
+    score += 8;
+    tags.push('0の生成 (相殺)');
+    reasons.push(`同数減算（${zeroGenStep.leftValue}-${zeroGenStep.rightValue}=0）等により意図的に0を創出し、余分な手札を中立化`);
   }
 
-  // 3. Beyond 9x9 multiplication (excluding identity ×1 and ×0)
+  // 3. [1の生成] 自前で 1 を作り出すこと（N ÷ N = 1 や差による1）には多少の価値（+10点）
+  // ※ ×1 や ÷1 の恒等演算自体には加点しない（差が出ないよう等価扱い）
+  const unitDivStep = sol.steps.find(
+    (st) => st.operator === '÷' && st.leftValue === st.rightValue && st.leftValue > 1
+  );
+  const unitDiffStep = sol.steps.find(
+    (st) => st.operator === '-' && st.result === 1 && st.leftValue > 1 && st.rightValue > 1
+  );
+  if (unitDivStep) {
+    score += 10;
+    tags.push('1の生成 (N÷N)');
+    reasons.push(`同数除算（${unitDivStep.leftValue}÷${unitDivStep.rightValue}=1）により意図的に「1」を創出して活用`);
+  } else if (unitDiffStep) {
+    score += 6;
+    tags.push('1の生成 (差)');
+    reasons.push(`引き算（${unitDiffStep.leftValue}-${unitDiffStep.rightValue}=1）により意図的に「1」を創出して活用`);
+  }
+
+  // 4. 九九超えの掛け算 (合成した2桁以上の数同士の掛け算)
   const mulBigs: string[] = [];
   let mulBonus = 0;
   for (const st of sol.steps) {
     if (st.operator === '×') {
       const a = st.leftValue;
       const b = st.rightValue;
-      // Must be a substantive non-trivial multiplication (both factors >= 2)
       if (a >= 2 && b >= 2 && (a >= 10 || b >= 10)) {
         mulBigs.push(`${a}×${b}`);
-        mulBonus += a >= 20 || b >= 20 ? 22 : 16;
-        if (a >= 10 && b >= 10) mulBonus += 12;
+        mulBonus += a >= 20 || b >= 20 ? 18 : 12;
+        if (a >= 10 && b >= 10) mulBonus += 10;
       }
     }
   }
   if (mulBigs.length > 0) {
-    score += Math.min(45, mulBonus);
+    score += Math.min(30, mulBonus);
     tags.push(`九九超え (${mulBigs.join(', ')})`);
     reasons.push(`九九(9×9)を超える掛け算 (${mulBigs.join(', ')}) を巧みに活用`);
   }
 
-  // 4. Operator diversity
-  // Group +0 and -0 as equivalent additive identity ('identity_zero')
-  // Group ×1 and ÷1 as equivalent multiplicative identity ('identity_one')
+  // 5. 通常の巧みな除算（3桁除算や同数除算以外の、2以上の割る数による除算）
+  const regularDivSteps = sol.steps.filter(
+    (st) =>
+      st.operator === '÷' &&
+      st.rightValue > 1 &&
+      st.leftValue !== st.rightValue &&
+      st.leftValue < 100
+  );
+  if (regularDivSteps.length > 0 && !directThreeDigitDiv) {
+    score += 10;
+    tags.push('巧みな除算');
+    reasons.push('余りの出ない割り算による鮮やかな縮約');
+  }
+
+  // 6. Operator diversity
+  // Group +0 and -0 as equivalent additive identity ('identity_zero') so they do not differentiate or inflate count
+  // Group ×1 and ÷1 as equivalent multiplicative identity ('identity_one') so they do not differentiate or inflate count
   const opCategories = new Set<string>();
   for (const st of sol.steps) {
     if (isZeroIdentityStep(st)) {
@@ -311,16 +376,22 @@ export function evaluateArtistry(sol: Omit<Solution, 'artistry'>): ArtistryInfo 
     }
   }
 
-  const opCount = opCategories.size;
-  if (opCount >= 4) {
-    score += 26;
+  // Count substantial arithmetic operators (excluding pure identity pass-through)
+  const substantialOps = new Set(
+    sol.steps
+      .filter((st) => !isZeroIdentityStep(st) && !isOneIdentityStep(st))
+      .map((st) => st.operator)
+  );
+
+  if (substantialOps.size >= 4) {
+    score += 20;
     tags.push('4種演算融合');
-    reasons.push('加減乗除や相殺・中立化を含む4種の演算構造を完全に融合');
-  } else if (opCount === 3) {
-    score += 15;
+    reasons.push('加減乗除の4種の実質的な演算を高度に融合');
+  } else if (substantialOps.size === 3) {
+    score += 10;
     tags.push('3種演算融合');
-    reasons.push('3種類の多様な演算・構造を柔軟に組み合わせて計算');
-  } else if (opCount === 1) {
+    reasons.push('3種類の実質的な演算を柔軟に組み合わせて計算');
+  } else if (opCategories.size === 1) {
     const only = Array.from(opCategories)[0];
     if (only === '+' || only === '×') {
       score -= 10;
@@ -328,30 +399,7 @@ export function evaluateArtistry(sol: Omit<Solution, 'artistry'>): ArtistryInfo 
     }
   }
 
-  // 5. Clever division (substantive division where divisor > 1; ÷1 is evaluated equivalently to ×1 above)
-  const substantiveDivSteps = sol.steps.filter((st) => st.operator === '÷' && st.rightValue > 1);
-  if (substantiveDivSteps.length > 0) {
-    score += 12;
-    tags.push('巧みな除算');
-    const hasUnitDiv = substantiveDivSteps.some((st) => st.leftValue === st.rightValue);
-    if (hasUnitDiv) {
-      score += 8;
-      tags.push('1の生成 (N÷N)');
-      reasons.push('同数除算（N÷N）により「1」をスマートに生成');
-    } else {
-      reasons.push('余りの出ない割り算による鮮やかな縮約');
-    }
-  }
-
-  // 6. Bold detour / Peak value
-  const peakVal = sol.steps.length > 0 ? Math.max(...sol.steps.map((st) => st.result)) : 0;
-  if (peakVal > sol.target * 1.25 && peakVal >= 25) {
-    score += 14;
-    tags.push(`大胆な迂回 (${peakVal})`);
-    reasons.push(`目標値を超える中間値 (${peakVal}) を作ってから着地する迂回ルート`);
-  }
-
-  // 7. Tree structure (parallel pairs)
+  // 7. Tree structure (parallel pairs calculation)
   if (sol.steps.length >= 3) {
     const s1 = sol.steps[0];
     const s2 = sol.steps[1];

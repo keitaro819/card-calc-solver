@@ -448,7 +448,7 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="数式やタグ(例: 0の活用, 九九超え)..."
+              placeholder="数式やタグ(例: 3桁除算, 九九超え)..."
               className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
             />
           </div>
