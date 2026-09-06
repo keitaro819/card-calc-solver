@@ -172,31 +172,10 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
       }
 
       if (!response.ok) {
-        // If structured error from our API
         if (data && data.error) {
           throw new Error(data.error);
         }
-
-        // 404 Not Found (Common on Vercel without serverless route or missing config)
-        if (response.status === 404) {
-          throw new Error(
-            'APIエンドポイント（/api/analyze-screenshot）が見つかりませんでした (HTTP 404)。\n' +
-            'Vercelなどのサーバーレス環境をご利用の場合は、環境変数 GEMINI_API_KEY が設定されているかご確認ください。\n' +
-            '※ 画像認識を行わなくても、手動でTARGETとカード数値を入力すれば解法検索はそのまま利用可能です。'
-          );
-        }
-
-        // 503 or 500 error
-        if (response.status === 503 || response.status === 500) {
-          throw new Error(
-            data?.error ||
-            'AIサーバーにアクセスできませんでした。環境変数 GEMINI_API_KEY が設定されているかご確認ください。\n' +
-            '※ 手動で数値を入力して解法を計算することも可能です。'
-          );
-        }
-
-        const snippet = rawText ? ` (${rawText.slice(0, 100).trim()})` : '';
-        throw new Error(`サーバーエラーが発生しました (HTTP ${response.status})${snippet}`);
+        throw new Error('画像の読み取りに失敗しました。下の入力欄から直接数値を入力してください。');
       }
 
       if (!data || !data.success) {
@@ -210,7 +189,7 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
 
       if (!targetVal || isNaN(targetVal) || targetVal <= 0 || cardsVal.length < 5) {
         throw new Error(
-          data.error || '画像からTARGET（目標値）または5枚のカード数値を十分に認識できませんでした。左側の入力欄で数値を直接入力してください。'
+          data?.error || '画像から数値を認識できませんでした。下の入力欄から直接数値を入力してください。'
         );
       }
 
@@ -219,7 +198,7 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
       onDataDetected(targetVal, cardsVal.slice(0, 5), base64Url);
     } catch (err: any) {
       console.error(err);
-      setError(err?.message || 'Gemini Vision AI での画像解析に失敗しました。数値を手動で調整してください。');
+      setError(err?.message || '画像の読み取りに失敗しました。下の入力欄から直接数値を入力してください。');
     } finally {
       setIsAnalyzing(false);
     }
@@ -362,42 +341,21 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
       )}
 
       {error && (
-        <div className="p-3 bg-amber-50/90 border border-amber-300 rounded-lg flex flex-col gap-2 text-xs text-amber-900">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p className="text-amber-950 font-medium whitespace-pre-line leading-relaxed">{error}</p>
-              </div>
-            </div>
-            {imagePreview && (
-              <button
-                type="button"
-                onClick={handleRetry}
-                disabled={isAnalyzing}
-                className="shrink-0 flex items-center gap-1 bg-white hover:bg-amber-100 text-amber-800 border border-amber-300 font-semibold px-2 py-1 rounded shadow-xs transition-colors"
-              >
-                <RefreshCw className={`w-3 h-3 ${isAnalyzing ? 'animate-spin' : ''}`} />
-                <span>再試行</span>
-              </button>
-            )}
+        <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-start justify-between gap-2 text-xs text-amber-900">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-amber-900 font-medium leading-relaxed">{error}</p>
           </div>
-          {(error.includes('GEMINI_API_KEY') || error.includes('404')) && (
-            <div className="mt-1 pt-2 border-t border-amber-200/80 text-[11px] text-amber-900 space-y-1 bg-white/80 p-2.5 rounded border border-amber-200/50">
-              <div className="font-bold text-amber-950 flex items-center gap-1">
-                <span>📌</span> Vercel環境変数の設定手順
-              </div>
-              <ol className="list-decimal list-inside space-y-0.5 text-amber-900">
-                <li>Vercel ダッシュボードで対象プロジェクトを開く</li>
-                <li><strong>Settings</strong> → <strong>Environment Variables</strong> を選択</li>
-                <li>Keyに <code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-amber-950 font-bold">GEMINI_API_KEY</code>、ValueにAPIキーを入力して追加</li>
-                <li><strong>Deployments</strong> タブから最新のデプロイを <strong>Redeploy</strong></li>
-              </ol>
-              <div className="pt-1.5 border-t border-amber-200/60 text-slate-700 text-[11px] flex items-center gap-1">
-                <span>💡</span>
-                <span><strong>手動入力なら今すぐ計算可能:</strong> 下の「TARGET & カード数値」入力欄に直接数値を入力すれば、画像解析なしですぐに解法を検索できます。</span>
-              </div>
-            </div>
+          {imagePreview && (
+            <button
+              type="button"
+              onClick={handleRetry}
+              disabled={isAnalyzing}
+              className="shrink-0 flex items-center gap-1 bg-white hover:bg-amber-100 text-amber-800 border border-amber-300 font-semibold px-2 py-0.5 rounded shadow-xs transition-colors"
+            >
+              <RefreshCw className={`w-3 h-3 ${isAnalyzing ? 'animate-spin' : ''}`} />
+              <span>再試行</span>
+            </button>
           )}
         </div>
       )}

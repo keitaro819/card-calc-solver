@@ -24,8 +24,7 @@ app.post('/api/analyze-screenshot', async (req, res) => {
     if (!apiKey) {
       return res.status(503).json({
         success: false,
-        error:
-          'GEMINI_API_KEY が環境変数に設定されていません。\nVercel等のホスティング環境をご利用の場合は、管理画面（Settings → Environment Variables）にて GEMINI_API_KEY を登録し再デプロイしてください。\n※ なお、画像認識を行わなくても手動でTARGETとカード数値を入力すれば解法検索をご利用いただけます。',
+        error: '画像の自動読み取りは現在ご利用いただけません。下の入力欄から数値を直接ご入力ください。',
       });
     }
 

@@ -22,8 +22,7 @@ export default async function handler(req: any, res: any) {
   if (!apiKey) {
     return res.status(503).json({
       success: false,
-      error:
-        'GEMINI_API_KEY が環境変数に設定されていません。\nVercelをご利用の場合は、Vercelのプロジェクト設定「Settings」→「Environment Variables」にて GEMINI_API_KEY を登録し、再デプロイしてください。\n※ 画像認識を行わなくても、手動でTARGETとカード数値を入力すれば解法検索をご利用いただけます。',
+      error: '画像の自動読み取りは現在ご利用いただけません。下の入力欄から数値を直接ご入力ください。',
     });
   }
 
