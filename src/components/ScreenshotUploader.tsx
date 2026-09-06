@@ -10,6 +10,52 @@ interface ScreenshotUploaderProps {
   resetTrigger?: number;
 }
 
+// Helper to compress and resize large screenshots before uploading
+function compressImageForUpload(file: File, maxDim = 1280): Promise<{ base64: string; mimeType: string }> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onerror = () => {
+      resolve({ base64: '', mimeType: file.type });
+    };
+    reader.onload = () => {
+      const originalBase64 = reader.result as string;
+      const img = new Image();
+      img.onerror = () => {
+        resolve({ base64: originalBase64, mimeType: file.type });
+      };
+      img.onload = () => {
+        try {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve({ base64: originalBase64, mimeType: file.type });
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.88);
+          resolve({ base64: compressed, mimeType: 'image/jpeg' });
+        } catch {
+          resolve({ base64: originalBase64, mimeType: file.type });
+        }
+      };
+      img.src = originalBase64;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
   onDataDetected,
   isAnalyzing,
@@ -19,7 +65,8 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
   resetTrigger,
 }) => {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [lastMimeType, setLastMimeType] = useState<string>('image/png');
+  const [lastCompressedBase64, setLastCompressedBase64] = useState<string | null>(null);
+  const [lastMimeType, setLastMimeType] = useState<string>('image/jpeg');
   const [dragActive, setDragActive] = useState(false);
   const [detectionSuccess, setDetectionSuccess] = useState(false);
   const [detectionNotes, setDetectionNotes] = useState<string | null>(null);
@@ -29,6 +76,7 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
   useEffect(() => {
     if (resetTrigger !== undefined && resetTrigger > 0) {
       setImagePreview(null);
+      setLastCompressedBase64(null);
       setDetectionSuccess(false);
       setDetectionNotes(null);
       if (fileInputRef.current) {
@@ -67,21 +115,24 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
     setError(null);
     setDetectionSuccess(false);
     setDetectionNotes(null);
-    setLastMimeType(file.type);
 
-    // Read preview
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const base64Data = e.target?.result as string;
-      setImagePreview(base64Data);
-      await analyzeImage(base64Data, file.type);
-    };
-    reader.readAsDataURL(file);
+    // Compress & resize for efficient upload
+    const { base64, mimeType } = await compressImageForUpload(file);
+    if (!base64) {
+      setError('画像の読み込みに失敗しました。');
+      return;
+    }
+
+    setImagePreview(base64);
+    setLastCompressedBase64(base64);
+    setLastMimeType(mimeType);
+
+    await analyzeImage(base64, mimeType);
   };
 
   const handleRetry = () => {
-    if (imagePreview) {
-      analyzeImage(imagePreview, lastMimeType);
+    if (lastCompressedBase64) {
+      analyzeImage(lastCompressedBase64, lastMimeType);
     }
   };
 
@@ -101,10 +152,55 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
         }),
       });
 
-      const data = await response.json();
+      // Safely inspect response to prevent "Unexpected token 'T', 'The page c'... is not valid JSON"
+      const contentType = response.headers.get('content-type') || '';
+      let data: any = null;
+      let rawText = '';
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || '画像の解析に失敗しました。');
+      if (contentType.includes('application/json')) {
+        try {
+          data = await response.json();
+        } catch {
+          data = null;
+        }
+      } else {
+        try {
+          rawText = await response.text();
+        } catch {
+          rawText = '';
+        }
+      }
+
+      if (!response.ok) {
+        // If structured error from our API
+        if (data && data.error) {
+          throw new Error(data.error);
+        }
+
+        // 404 Not Found (Common on Vercel without serverless route or missing config)
+        if (response.status === 404) {
+          throw new Error(
+            'APIエンドポイント（/api/analyze-screenshot）が見つかりませんでした (HTTP 404)。\n' +
+            'Vercelなどのサーバーレス環境をご利用の場合は、環境変数 GEMINI_API_KEY が設定されているかご確認ください。\n' +
+            '※ 画像認識を行わなくても、手動でTARGETとカード数値を入力すれば解法検索はそのまま利用可能です。'
+          );
+        }
+
+        // 503 or 500 error
+        if (response.status === 503 || response.status === 500) {
+          throw new Error(
+            data?.error ||
+            'AIサーバーにアクセスできませんでした。環境変数 GEMINI_API_KEY が設定されているかご確認ください。\n' +
+            '※ 手動で数値を入力して解法を計算することも可能です。'
+          );
+        }
+
+        const snippet = rawText ? ` (${rawText.slice(0, 100).trim()})` : '';
+        throw new Error(`サーバーエラーが発生しました (HTTP ${response.status})${snippet}`);
+      }
+
+      if (!data || !data.success) {
+        throw new Error(data?.error || '画像の解析に失敗しました。数値を手動で入力してください。');
       }
 
       const targetVal = Number(data.target);
@@ -266,23 +362,42 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
       )}
 
       {error && (
-        <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg flex items-start justify-between gap-2 text-xs text-red-800">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-            <div className="space-y-0.5">
-              <p className="text-red-700">{error}</p>
+        <div className="p-3 bg-amber-50/90 border border-amber-300 rounded-lg flex flex-col gap-2 text-xs text-amber-900">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-amber-950 font-medium whitespace-pre-line leading-relaxed">{error}</p>
+              </div>
             </div>
+            {imagePreview && (
+              <button
+                type="button"
+                onClick={handleRetry}
+                disabled={isAnalyzing}
+                className="shrink-0 flex items-center gap-1 bg-white hover:bg-amber-100 text-amber-800 border border-amber-300 font-semibold px-2 py-1 rounded shadow-xs transition-colors"
+              >
+                <RefreshCw className={`w-3 h-3 ${isAnalyzing ? 'animate-spin' : ''}`} />
+                <span>再試行</span>
+              </button>
+            )}
           </div>
-          {imagePreview && (
-            <button
-              type="button"
-              onClick={handleRetry}
-              disabled={isAnalyzing}
-              className="shrink-0 flex items-center gap-1 bg-white hover:bg-red-100 text-red-700 border border-red-300 font-semibold px-2 py-0.5 rounded shadow-xs transition-colors"
-            >
-              <RefreshCw className={`w-3 h-3 ${isAnalyzing ? 'animate-spin' : ''}`} />
-              <span>再試行</span>
-            </button>
+          {(error.includes('GEMINI_API_KEY') || error.includes('404')) && (
+            <div className="mt-1 pt-2 border-t border-amber-200/80 text-[11px] text-amber-900 space-y-1 bg-white/80 p-2.5 rounded border border-amber-200/50">
+              <div className="font-bold text-amber-950 flex items-center gap-1">
+                <span>📌</span> Vercel環境変数の設定手順
+              </div>
+              <ol className="list-decimal list-inside space-y-0.5 text-amber-900">
+                <li>Vercel ダッシュボードで対象プロジェクトを開く</li>
+                <li><strong>Settings</strong> → <strong>Environment Variables</strong> を選択</li>
+                <li>Keyに <code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-amber-950 font-bold">GEMINI_API_KEY</code>、ValueにAPIキーを入力して追加</li>
+                <li><strong>Deployments</strong> タブから最新のデプロイを <strong>Redeploy</strong></li>
+              </ol>
+              <div className="pt-1.5 border-t border-amber-200/60 text-slate-700 text-[11px] flex items-center gap-1">
+                <span>💡</span>
+                <span><strong>手動入力なら今すぐ計算可能:</strong> 下の「TARGET & カード数値」入力欄に直接数値を入力すれば、画像解析なしですぐに解法を検索できます。</span>
+              </div>
+            </div>
           )}
         </div>
       )}
