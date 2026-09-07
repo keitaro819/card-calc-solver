@@ -1,11 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Solution, Operator, PuzzleDifficultyInfo } from '../types.ts';
+import { Solution, SolutionVariant, PuzzleDifficultyInfo } from '../types.ts';
 import { evaluatePuzzleDifficulty } from '../solver.ts';
 import {
-  Search,
-  Copy,
-  Check,
-  Play,
   ChevronDown,
   ChevronUp,
   Sparkles,
@@ -13,31 +9,28 @@ import {
   Info,
   Flame,
   HelpCircle,
+  Shuffle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export type SortMode = 'artistry-desc' | 'default' | 'artistry-asc';
 
 interface AllCardsSolutionsListProps {
-  solutions: Solution[]; // Already filtered for usesAllCards
+  solutions: Solution[];
   target: number | '';
   initialCards: Array<number | ''>;
-  onOpenSimulator: (sol: Solution) => void;
 }
 
 export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
   solutions,
   target,
   initialCards,
-  onOpenSimulator,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedOpFilter, setSelectedOpFilter] = useState<Operator | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('artistry-desc');
   const [showArtistryCriteria, setShowArtistryCriteria] = useState(false);
+  const [showDifficultyHelp, setShowDifficultyHelp] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [allCopied, setAllCopied] = useState(false);
+  const [expandedVariantIds, setExpandedVariantIds] = useState<Set<string>>(new Set());
 
   // Check if inputs are fully configured
   const isInputConfigured =
@@ -45,7 +38,10 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
     target > 0 &&
     initialCards.filter((c): c is number => typeof c === 'number' && c > 0).length === 5;
 
-  const [showDifficultyHelp, setShowDifficultyHelp] = useState(false);
+  // Total count of variants across all solutions
+  const totalVariantsCount = useMemo(() => {
+    return solutions.reduce((acc, s) => acc + (s.variants?.length ?? 0), 0);
+  }, [solutions]);
 
   // Calculate difficulty of this specific puzzle based on solution count
   const puzzleDifficulty = useMemo(() => {
@@ -73,30 +69,30 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
     setExpandedIds(new Set());
   };
 
-  // Filter solutions
-  const filteredSolutions = useMemo(() => {
-    return solutions.filter((sol) => {
-      // Operator filter
-      if (selectedOpFilter && !sol.operatorsUsed.includes(selectedOpFilter)) {
-        return false;
+  // Toggle accordion for variants
+  const toggleVariantExpand = (id: string) => {
+    setExpandedVariantIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
       }
-
-      // Search query filter
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
-        const exprMatch = sol.expression.toLowerCase().includes(q);
-        const stepsMatch = sol.steps.some((st) => st.expression.toLowerCase().includes(q));
-        const tagsMatch = sol.artistry?.tags.some((t) => t.toLowerCase().includes(q));
-        if (!exprMatch && !stepsMatch && !tagsMatch) return false;
-      }
-
-      return true;
+      return next;
     });
-  }, [solutions, selectedOpFilter, searchQuery]);
+  };
+
+  const expandAllVariants = () => {
+    setExpandedVariantIds(new Set(solutions.map((s) => s.id)));
+  };
+
+  const collapseAllVariants = () => {
+    setExpandedVariantIds(new Set());
+  };
 
   // Sort solutions according to chosen mode
   const displaySolutions = useMemo(() => {
-    const list = [...filteredSolutions];
+    const list = [...solutions];
     if (sortMode === 'artistry-desc') {
       return list.sort((a, b) => {
         const scoreA = a.artistry?.score ?? 0;
@@ -112,48 +108,8 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
         return a.expression.localeCompare(b.expression);
       });
     }
-    // 'default': standard order from solver
     return list;
-  }, [filteredSolutions, sortMode]);
-
-  // Copy single formula
-  const handleCopySingle = (sol: Solution) => {
-    navigator.clipboard.writeText(`${sol.expression} = ${sol.target}`);
-    setCopiedId(sol.id);
-    setTimeout(() => setCopiedId(null), 1800);
-  };
-
-  // Copy all formulas
-  const handleCopyAll = () => {
-    const sortLabel =
-      sortMode === 'artistry-desc'
-        ? '芸術性が高い順'
-        : sortMode === 'artistry-asc'
-        ? 'シンプル順'
-        : '標準順';
-
-    const text = [
-      `【カード計算パズル 解法一覧 (${sortLabel})】`,
-      `TARGET: ${target}`,
-      `カード: [${initialCards.join(', ')}]`,
-      `パターン総数: ${displaySolutions.length} 通り`,
-      '--------------------------------------------------',
-      ...displaySolutions.map((s, idx) => {
-        const art = s.artistry;
-        const artLine = art
-          ? `[芸術度: ${art.grade} (${art.score}点 / ★${art.stars}) タグ: ${art.tags.join(', ') || '基本演算'}]`
-          : '';
-        const stepLines = s.steps
-          .map((st, i) => `   (${i + 1}) ${st.leftValue} ${st.operator} ${st.rightValue} = ${st.result}`)
-          .join('\n');
-        return `[#${idx + 1}] ${s.expression} = ${s.target}\n${artLine}\n${stepLines}`;
-      }),
-    ].join('\n\n');
-
-    navigator.clipboard.writeText(text);
-    setAllCopied(true);
-    setTimeout(() => setAllCopied(false), 2000);
-  };
+  }, [solutions, sortMode]);
 
   // Helper for grade badge styling
   const getGradeBadge = (art?: Solution['artistry']) => {
@@ -298,14 +254,20 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* List Header Bar */}
-      <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs space-y-3">
+      {/* List Header & Controls Bar */}
+      <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 shadow-xs space-y-3">
+        {/* Top summary row */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <h3 className="font-bold text-base text-slate-800">解法一覧</h3>
-            <span className="bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold px-2 py-0.5 rounded-full">
-              {solutions.length} 通り
+            <h3 className="font-bold text-base text-slate-900">解法一覧</h3>
+            <span className="bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold px-2.5 py-0.5 rounded-full">
+              {solutions.length} パターン
             </span>
+            {totalVariantsCount > 0 && (
+              <span className="text-xs text-slate-500 font-medium hidden sm:inline">
+                （順序違い含め計 <strong className="text-slate-700">{solutions.length + totalVariantsCount}</strong> 通り）
+              </span>
+            )}
 
             {/* Problem Difficulty Badge */}
             {puzzleDifficulty && (
@@ -335,7 +297,7 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div>
             <button
               type="button"
               onClick={() => setShowArtistryCriteria((prev) => !prev)}
@@ -344,25 +306,6 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               <span>芸術性の基準とは？</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleCopyAll}
-              disabled={solutions.length === 0}
-              className="flex items-center gap-1.5 text-xs bg-white hover:bg-slate-50 disabled:opacity-40 text-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 font-medium shadow-xs transition-colors"
-            >
-              {allCopied ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="text-emerald-700 font-semibold">コピー完了</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>全解法をコピー</span>
-                </>
-              )}
             </button>
           </div>
         </div>
@@ -544,8 +487,8 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
           )}
         </AnimatePresence>
 
-        {/* Sort & Filter controls */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
+        {/* Toolbar: Sort selector & Batch toggles */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-slate-100">
           {/* Sort selector */}
           <div className="flex items-center gap-1 bg-slate-100/90 p-1 rounded-lg border border-slate-200">
             <span className="text-[11px] text-slate-500 font-semibold px-1.5 flex items-center gap-1">
@@ -587,65 +530,44 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
             </button>
           </div>
 
-          {/* Search */}
-          <div className="relative flex-1 min-w-[160px] max-w-xs">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="数式やタグ(例: 3桁除算, 大数乗算, 並行ツリー)..."
-              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
-            />
-          </div>
-
-          {/* Operator Filter Chips */}
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-slate-400 font-medium mr-0.5">演算子:</span>
-            <button
-              type="button"
-              onClick={() => setSelectedOpFilter(null)}
-              className={`px-2 py-1 rounded-md text-xs font-medium transition-colors ${
-                selectedOpFilter === null
-                  ? 'bg-slate-800 text-white'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-              }`}
-            >
-              全
-            </button>
-            {(['+', '-', '×', '÷'] as Operator[]).map((op) => (
-              <button
-                key={op}
-                type="button"
-                onClick={() => setSelectedOpFilter(selectedOpFilter === op ? null : op)}
-                className={`px-2 py-1 rounded-md text-xs font-mono font-bold transition-colors ${
-                  selectedOpFilter === op
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                }`}
-              >
-                {op}
-              </button>
-            ))}
-          </div>
-
-          {/* Expand / Collapse all */}
+          {/* Expand / Collapse buttons */}
           <div className="flex items-center gap-1 text-xs">
             <button
               type="button"
               onClick={expandAll}
-              className="text-slate-500 hover:text-slate-800 px-1.5 py-1 rounded hover:bg-slate-100 transition-colors"
+              className="text-slate-600 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 font-medium transition-colors"
             >
-              すべて展開
+              手順を展開
             </button>
             <span className="text-slate-300">|</span>
             <button
               type="button"
               onClick={collapseAll}
-              className="text-slate-500 hover:text-slate-800 px-1.5 py-1 rounded hover:bg-slate-100 transition-colors"
+              className="text-slate-600 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 font-medium transition-colors"
             >
               折りたたむ
             </button>
+            {totalVariantsCount > 0 && (
+              <>
+                <span className="text-slate-300 ml-1">|</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (expandedVariantIds.size === solutions.length) {
+                      collapseAllVariants();
+                    } else {
+                      expandAllVariants();
+                    }
+                  }}
+                  className="text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50 font-medium transition-colors ml-0.5 flex items-center gap-1"
+                >
+                  <Shuffle className="w-3.5 h-3.5 text-blue-500" />
+                  <span>
+                    {expandedVariantIds.size === solutions.length ? '順序バリエーションを畳む' : '順序バリエーション全展開'}
+                  </span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -672,128 +594,56 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
           </div>
           <div>
             <h4 className="font-bold text-sm sm:text-base text-slate-800">
-              {solutions.length === 0
-                ? '解法が見つかりませんでした'
-                : '検索条件に一致する解法がありません'}
+              解法が見つかりませんでした
             </h4>
             <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
-              {solutions.length === 0
-                ? 'この組み合わせでTARGETを作る解法が存在しません。数値を変更してください。'
-                : '検索フィルターまたは演算子フィルターをクリアしてください。'}
+              この組み合わせでTARGETを作る解法が存在しません。数値を変更してください。
             </p>
           </div>
         </div>
       ) : (
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           {displaySolutions.map((sol, index) => {
             const isExpanded = expandedIds.has(sol.id);
-            const isCopied = copiedId === sol.id;
+            const isVariantExpanded = expandedVariantIds.has(sol.id);
             const art = sol.artistry;
+            const variants = sol.variants || [];
 
             return (
               <div
                 key={sol.id}
-                className="bg-white border border-slate-200 hover:border-slate-300 rounded-xl p-3.5 shadow-xs transition-all"
+                className="bg-white border border-slate-200 hover:border-slate-300 rounded-xl p-4 shadow-xs transition-all space-y-2.5"
               >
-                {/* Header row */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                {/* Header row: Index, Grade & Toggle (pinned to right) */}
+                <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shrink-0">
                       #{String(index + 1).padStart(2, '0')}
                     </span>
 
                     {/* Artistry Badge */}
                     {getGradeBadge(art)}
+                  </div>
 
-                    {/* Star rating */}
-                    {art && (
-                      <span
-                        className="text-xs font-mono tracking-tight text-amber-400"
-                        title={`芸術性スコア: ${art.score}/100点`}
-                      >
-                        {'★'.repeat(art.stars)}
-                        <span className="text-slate-200">{'★'.repeat(5 - art.stars)}</span>
-                      </span>
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(sol.id)}
+                    className="ml-auto shrink-0 text-xs bg-slate-50 hover:bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md border border-slate-200 flex items-center gap-1.5 font-medium transition-colors"
+                  >
+                    <span>{isExpanded ? '手順を閉じる' : '手順を見る'}</span>
+                    {isExpanded ? (
+                      <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
                     )}
-
-                    {/* Operators used */}
-                    <div className="flex items-center gap-1 ml-1">
-                      {sol.operatorsUsed.map((op) => (
-                        <span
-                          key={op}
-                          className="w-5 h-5 rounded bg-slate-100 text-slate-700 font-mono text-xs font-bold flex items-center justify-center"
-                        >
-                          {op}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleCopySingle(sol)}
-                      className="text-xs bg-slate-50 hover:bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md border border-slate-200 flex items-center gap-1 transition-colors"
-                      title="数式をコピー"
-                    >
-                      {isCopied ? (
-                        <>
-                          <Check className="w-3 h-3 text-emerald-600" />
-                          <span className="text-emerald-700 font-semibold">コピー済</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3 h-3 text-slate-500" />
-                          <span>コピー</span>
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => onOpenSimulator(sol)}
-                      className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 px-2.5 py-1 rounded-md border border-blue-200 flex items-center gap-1 font-medium transition-colors"
-                      title="ステップシミュレーターで再生"
-                    >
-                      <Play className="w-3 h-3" />
-                      <span>再生</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => toggleExpand(sol.id)}
-                      className="text-xs text-slate-500 hover:text-slate-800 p-1 rounded hover:bg-slate-100 transition-colors"
-                      title={isExpanded ? '手順を閉じる' : '手順を見る'}
-                    >
-                      {isExpanded ? (
-                        <ChevronUp className="w-4 h-4" />
-                      ) : (
-                        <ChevronDown className="w-4 h-4" />
-                      )}
-                    </button>
-                  </div>
+                  </button>
                 </div>
 
                 {/* Formula display & Tags */}
-                <div className="pt-2.5 pb-1 space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-mono text-base sm:text-lg font-bold text-slate-900 tracking-tight">
-                      <span>{sol.expression}</span>
-                      <span className="text-blue-600 font-extrabold ml-2">= {sol.target}</span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => toggleExpand(sol.id)}
-                      className="text-xs text-blue-600 hover:underline flex items-center gap-1 font-medium"
-                    >
-                      <span>{isExpanded ? '手順を閉じる' : '手順を見る'}</span>
-                      {isExpanded ? (
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      ) : (
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      )}
-                    </button>
+                <div className="space-y-2">
+                  <div className="font-mono text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+                    <span>{sol.expression}</span>
+                    <span className="text-blue-600 font-extrabold ml-2.5">= {sol.target}</span>
                   </div>
 
                   {/* Artistry tags chips */}
@@ -811,12 +661,12 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
-                      className="overflow-hidden pt-2 border-t border-slate-100"
+                      className="overflow-hidden pt-1"
                     >
-                      <div className="bg-slate-50 rounded-lg p-3 space-y-2.5 border border-slate-200/70">
+                      <div className="bg-slate-50 rounded-xl p-3.5 space-y-2.5 border border-slate-200/80">
                         {/* Artistry Reasons Explanation */}
                         {art && art.reasons.length > 0 && (
-                          <div className="bg-amber-50/60 border border-amber-200/60 rounded-md p-2 text-xs text-amber-900">
+                          <div className="bg-amber-50/70 border border-amber-200/70 rounded-lg p-2.5 text-xs text-amber-950">
                             <div className="font-bold flex items-center gap-1 text-[11px] text-amber-800 mb-1">
                               <Sparkles className="w-3 h-3 text-amber-600" />
                               芸術的評価ポイント (スコア: {art.score}点)
@@ -830,11 +680,11 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
                         )}
 
                         {/* Steps Grid */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {sol.steps.map((st, i) => (
                             <div
                               key={i}
-                              className="bg-white border border-slate-200 rounded-md p-2 text-xs flex items-center justify-between"
+                              className="bg-white border border-slate-200 rounded-lg p-2.5 text-xs flex items-center justify-between shadow-2xs"
                             >
                               <div className="flex items-center gap-2">
                                 <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold flex items-center justify-center">
@@ -855,6 +705,104 @@ export const AllCardsSolutionsList: React.FC<AllCardsSolutionsListProps> = ({
                     </motion.div>
                   )}
                 </AnimatePresence>
+
+                {/* 順序バリエーション (variants) */}
+                {variants.length > 0 && (
+                  <div className="pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => toggleVariantExpand(sol.id)}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-medium border border-slate-200 transition-colors group"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Shuffle className="w-3.5 h-3.5 text-blue-600" />
+                        <span className="font-semibold text-slate-800 group-hover:text-blue-700 transition-colors">
+                          順序バリエーション
+                        </span>
+                        <span className="font-bold text-blue-700 bg-blue-100/90 border border-blue-200/80 px-1.5 py-0.5 rounded text-[11px]">
+                          +{variants.length} 通り
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-1 text-[11px] text-slate-500 group-hover:text-slate-800 transition-colors">
+                        {isVariantExpanded ? (
+                          <>
+                            <span>折りたたむ</span>
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </>
+                        ) : (
+                          <>
+                            <span>展開して確認</span>
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </>
+                        )}
+                      </span>
+                    </button>
+
+                    <AnimatePresence>
+                      {isVariantExpanded && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="overflow-hidden pt-2 space-y-2"
+                        >
+                          <div className="bg-slate-50/90 rounded-xl p-3 space-y-2 border border-slate-200/80">
+                            <div className="text-[11px] text-slate-500 px-0.5">
+                              使用する数字と演算の骨格は同一で、計算する順序が異なるパターンです。
+                            </div>
+
+                            <div className="space-y-2">
+                              {variants.map((v, vIdx) => (
+                                <div
+                                  key={v.id}
+                                  className="bg-white border border-slate-200 rounded-lg p-2.5 shadow-2xs space-y-1.5"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                        #{vIdx + 1}
+                                      </span>
+                                      <span className="font-mono text-xs sm:text-sm font-bold text-slate-900">
+                                        {v.expression}{' '}
+                                        <span className="text-blue-600 font-extrabold">= {sol.target}</span>
+                                      </span>
+                                    </div>
+                                    {v.artistry && v.artistry.tags.length > 0 && (
+                                      <div className="flex items-center gap-1">
+                                        {v.artistry.tags.slice(0, 2).map((t) => (
+                                          <span
+                                            key={t}
+                                            className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200"
+                                          >
+                                            {t}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Step sequence preview */}
+                                  <div className="text-[11px] font-mono text-slate-600 bg-slate-50 rounded px-2.5 py-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 border border-slate-100">
+                                    <span className="text-[10px] font-bold text-slate-400">手順:</span>
+                                    {v.steps.map((st, sIdx) => (
+                                      <span key={sIdx} className="inline-flex items-center gap-1">
+                                        {sIdx > 0 && <span className="text-slate-300">→</span>}
+                                        <span>
+                                          {st.leftValue} {st.operator} {st.rightValue} ={' '}
+                                          <strong className="text-blue-600 font-bold">{st.result}</strong>
+                                        </span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
               </div>
             );
           })}

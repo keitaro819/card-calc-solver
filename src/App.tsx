@@ -8,9 +8,7 @@ import { Solution } from './types.ts';
 import { solveGameAllCardsOnly, evaluatePuzzleDifficulty } from './solver.ts';
 import { ScreenshotUploader } from './components/ScreenshotUploader.tsx';
 import { AllCardsSolutionsList } from './components/AllCardsSolutionsList.tsx';
-import { StepSimulator } from './components/StepSimulator.tsx';
 import { RotateCcw } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
 
 export default function App() {
   // Current recognized or configured puzzle values (empty initial state)
@@ -22,9 +20,6 @@ export default function App() {
   // Recognition state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Active simulator solution
-  const [activeSimulatorSolution, setActiveSimulatorSolution] = useState<Solution | null>(null);
 
   // Calculate solutions that use all 5 cards
   const allCardSolutions = useMemo(() => {
@@ -200,31 +195,10 @@ export default function App() {
               solutions={allCardSolutions}
               target={target}
               initialCards={cards}
-              onOpenSimulator={(sol) => setActiveSimulatorSolution(sol)}
             />
           </div>
         </div>
       </main>
-
-      {/* Simulator Modal for step-by-step playback */}
-      <AnimatePresence>
-        {activeSimulatorSolution && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs"
-          >
-            <div className="w-full max-w-lg">
-              <StepSimulator
-                solution={activeSimulatorSolution}
-                initialCards={cards}
-                onClose={() => setActiveSimulatorSolution(null)}
-              />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

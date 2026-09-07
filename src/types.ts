@@ -28,6 +28,15 @@ export interface ArtistryInfo {
   reasons: string[];
 }
 
+export interface SolutionVariant {
+  id: string;
+  expression: string;
+  steps: StepRecord[];
+  operatorsUsed: Operator[];
+  artistry?: ArtistryInfo;
+  description?: string;
+}
+
 export interface Solution {
   id: string;
   expression: string;
@@ -40,6 +49,7 @@ export interface Solution {
   usedInitialValues: number[];
   operatorsUsed: Operator[];
   artistry?: ArtistryInfo;
+  variants?: SolutionVariant[];
 }
 
 export interface PuzzleDifficultyInfo {

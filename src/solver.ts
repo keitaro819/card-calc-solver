@@ -1,6 +1,6 @@
-import { Operator, StepRecord, Solution, ArtistryInfo, PuzzleDifficultyInfo } from './types.ts';
+import { Operator, StepRecord, Solution, SolutionVariant, ArtistryInfo, PuzzleDifficultyInfo } from './types.ts';
 
-export type { Operator, StepRecord, Solution, ArtistryInfo, PuzzleDifficultyInfo };
+export type { Operator, StepRecord, Solution, SolutionVariant, ArtistryInfo, PuzzleDifficultyInfo };
 
 interface AST {
   type: 'num' | 'add' | 'mul';
@@ -217,8 +217,71 @@ function combineAST(op: Operator, left: AST, right: AST): AST {
   throw new Error(`Unsupported operator: ${op}`);
 }
 
+export interface StepNode {
+  val: number;
+  op?: Operator;
+  left?: StepNode;
+  right?: StepNode;
+}
+
+function hasOperator(node: StepNode | undefined, op: Operator): boolean {
+  if (!node || !node.op) return false;
+  if (node.op === op) return true;
+  return hasOperator(node.left, op) || hasOperator(node.right, op);
+}
+
+function isCompound(node: StepNode | undefined): boolean {
+  return !!(node && node.op);
+}
+
+/**
+ * Converts a step calculation tree into a clean human-readable mathematical formula.
+ * Preserves essential grouping, operator precedence, and clarifying brackets
+ * (e.g. ((9 - 3) ÷ 3 × 4) × 8).
+ */
+export function formatStepTree(node: StepNode, parentOp?: Operator, isRight?: boolean): string {
+  if (!node.op || !node.left || !node.right) return String(node.val);
+
+  let leftNode = node.left;
+  let rightNode = node.right;
+
+  // For commutative operations (+, ×), prefer placing compound operations on the left
+  if (node.op === '+' || node.op === '×') {
+    if (!isCompound(leftNode) && isCompound(rightNode)) {
+      leftNode = node.right;
+      rightNode = node.left;
+    }
+  }
+
+  const prec: Record<Operator, number> = { '+': 1, '-': 1, '×': 2, '÷': 2 };
+  const myPrec = prec[node.op];
+  const pPrec = parentOp ? prec[parentOp] : 0;
+
+  let needParens = false;
+  if (parentOp) {
+    if (myPrec < pPrec) {
+      needParens = true;
+    } else if (myPrec === pPrec) {
+      if (isRight && (parentOp === '-' || parentOp === '÷')) {
+        needParens = true;
+      } else if (!isRight && parentOp === '×' && node.op === '×' && hasOperator(node, '÷')) {
+        needParens = true;
+      } else if (isRight && parentOp === '×' && (node.op === '÷' || hasOperator(node, '÷'))) {
+        needParens = true;
+      }
+    }
+  }
+
+  const leftStr = formatStepTree(leftNode, node.op, false);
+  const rightStr = formatStepTree(rightNode, node.op, true);
+
+  const res = `${leftStr} ${node.op} ${rightStr}`;
+  return needParens ? `(${res})` : res;
+}
+
 interface SearchItem {
   ast: AST;
+  rawTree: StepNode;
   usedIndices: number[];
 }
 
@@ -535,10 +598,30 @@ export function evaluateArtistry(sol: Omit<Solution, 'artistry'>, ast?: AST): Ar
  * 3. Each card can only be used once.
  * 4. Deduplicates equivalent mathematical patterns using canonical algebraic AST representation.
  */
+interface RawVariant {
+  expression: string;
+  steps: StepRecord[];
+  ast: AST;
+  operatorsUsed: Operator[];
+  maxIntermediate: number;
+}
+
+interface CanonicalGroup {
+  canonicalKey: string;
+  canonicalFormula: string;
+  astExpr: string;
+  cardsUsedCount: number;
+  totalCardsCount: number;
+  usesAllCards: boolean;
+  usedInitialValues: number[];
+  ast: AST;
+  variants: RawVariant[];
+}
+
 export function solveGame(initialNumbers: number[], target: number): Solution[] {
   if (initialNumbers.length === 0) return [];
 
-  const solutionsMap = new Map<string, Solution>();
+  const groupsMap = new Map<string, CanonicalGroup>();
 
   function search(pool: SearchItem[], history: StepRecord[]) {
     // Check if any node in current pool equals target
@@ -547,39 +630,52 @@ export function solveGame(initialNumbers: number[], target: number): Solution[] 
         const canonical = astToCanonical(item.ast);
         const canonicalKey = `${canonical}#cards:${item.usedIndices.length}`;
 
-        if (!solutionsMap.has(canonicalKey)) {
-          const usedValues = item.usedIndices.map((i) => initialNumbers[i]);
-          const expr = astToString(item.ast);
-
-          // Collect all operators that actually appear in the formatted expression or AST
-          const ops: Operator[] = [];
-          const standardOps: Operator[] = ['+', '-', '×', '÷'];
-          for (const op of standardOps) {
-            if (expr.includes(op) && !ops.includes(op)) {
-              ops.push(op);
-            }
-          }
-          // Fallback: also ensure any operators from the calculation steps are included
-          for (const s of history) {
-            if (!ops.includes(s.operator)) ops.push(s.operator);
-          }
-
-          const partialSol: Omit<Solution, 'artistry'> = {
-            id: `sol-${solutionsMap.size + 1}`,
-            expression: expr,
+        let group = groupsMap.get(canonicalKey);
+        if (!group) {
+          group = {
+            canonicalKey,
             canonicalFormula: canonical,
-            target,
+            astExpr: astToString(item.ast),
             cardsUsedCount: item.usedIndices.length,
             totalCardsCount: initialNumbers.length,
             usesAllCards: item.usedIndices.length === initialNumbers.length,
-            steps: history,
-            usedInitialValues: usedValues,
-            operatorsUsed: ops,
+            usedInitialValues: item.usedIndices.map((i) => initialNumbers[i]),
+            ast: item.ast,
+            variants: [],
           };
+          groupsMap.set(canonicalKey, group);
+        }
 
-          solutionsMap.set(canonicalKey, {
-            ...partialSol,
-            artistry: evaluateArtistry(partialSol, item.ast),
+        const expr = formatStepTree(item.rawTree);
+
+        // Collect all operators that actually appear in the formatted expression or AST
+        const ops: Operator[] = [];
+        const standardOps: Operator[] = ['+', '-', '×', '÷'];
+        for (const op of standardOps) {
+          if (expr.includes(op) && !ops.includes(op)) {
+            ops.push(op);
+          }
+        }
+        // Also ensure any operators from the calculation steps are included
+        for (const s of history) {
+          if (!ops.includes(s.operator)) ops.push(s.operator);
+        }
+
+        const maxIntermediate = history.reduce((max, s) => Math.max(max, s.result), target);
+        const stepsSig = history.map((s) => `${s.leftValue}${s.operator}${s.rightValue}=${s.result}`).join(';');
+
+        const isDup = group.variants.some((v) => {
+          const vSig = v.steps.map((s) => `${s.leftValue}${s.operator}${s.rightValue}=${s.result}`).join(';');
+          return v.expression === expr && vSig === stepsSig;
+        });
+
+        if (!isDup) {
+          group.variants.push({
+            expression: expr,
+            steps: history,
+            ast: item.ast,
+            operatorsUsed: ops,
+            maxIntermediate,
           });
         }
       }
@@ -654,6 +750,12 @@ export function solveGame(initialNumbers: number[], target: number): Solution[] 
           const { op, left, right, res } = combo;
 
           const newAst = combineAST(op, left.ast, right.ast);
+          const newRaw: StepNode = {
+            val: res,
+            op,
+            left: left.rawTree,
+            right: right.rawTree,
+          };
           const combinedUsedIndices = Array.from(new Set([...left.usedIndices, ...right.usedIndices])).sort(
             (a, b) => a - b
           );
@@ -673,7 +775,7 @@ export function solveGame(initialNumbers: number[], target: number): Solution[] 
           };
 
           search(
-            [...rest, { ast: newAst, usedIndices: combinedUsedIndices }],
+            [...rest, { ast: newAst, rawTree: newRaw, usedIndices: combinedUsedIndices }],
             [...history, newStep]
           );
         }
@@ -683,23 +785,113 @@ export function solveGame(initialNumbers: number[], target: number): Solution[] 
 
   const initialItems: SearchItem[] = initialNumbers.map((val, idx) => ({
     ast: makeNum(val),
+    rawTree: { val },
     usedIndices: [idx],
   }));
 
   search(initialItems, []);
 
-  const results = Array.from(solutionsMap.values());
+  const results: Solution[] = [];
+  let groupIndex = 0;
+
+  for (const group of groupsMap.values()) {
+    groupIndex++;
+
+    const scoredVariants = group.variants.map((v, vIdx) => {
+      const partial: Omit<Solution, 'artistry'> = {
+        id: `sol-${groupIndex}-v-${vIdx + 1}`,
+        expression: v.expression,
+        canonicalFormula: group.canonicalFormula,
+        target,
+        cardsUsedCount: group.cardsUsedCount,
+        totalCardsCount: group.totalCardsCount,
+        usesAllCards: group.usesAllCards,
+        steps: v.steps,
+        usedInitialValues: group.usedInitialValues,
+        operatorsUsed: v.operatorsUsed,
+      };
+      return {
+        ...partial,
+        artistry: evaluateArtistry(partial, v.ast),
+        maxIntermediate: v.maxIntermediate,
+      };
+    });
+
+    if (scoredVariants.length === 0) continue;
+
+    // Rank variants to pick the representative (best) variant:
+    // 1. Prefer variants without unnecessary 3-digit intermediate results (> 100) if any exist
+    // 2. Higher artistry score
+    // 3. Lower max intermediate
+    // 4. Shorter expression string
+    scoredVariants.sort((a, b) => {
+      const aLarge = a.maxIntermediate > 100 ? 1 : 0;
+      const bLarge = b.maxIntermediate > 100 ? 1 : 0;
+      if (aLarge !== bLarge) return aLarge - bLarge;
+
+      if (b.artistry.score !== a.artistry.score) {
+        return b.artistry.score - a.artistry.score;
+      }
+      if (a.maxIntermediate !== b.maxIntermediate) {
+        return a.maxIntermediate - b.maxIntermediate;
+      }
+      if (a.expression.length !== b.expression.length) {
+        return a.expression.length - b.expression.length;
+      }
+      return a.expression.localeCompare(b.expression);
+    });
+
+    const representative = scoredVariants[0];
+
+    // Deduplicate other variants by unique expression (preserving distinct calculation patterns)
+    const seenExprs = new Set<string>([representative.expression]);
+    const otherVariants: SolutionVariant[] = [];
+
+    for (const v of scoredVariants.slice(1)) {
+      if (!seenExprs.has(v.expression)) {
+        seenExprs.add(v.expression);
+        otherVariants.push({
+          id: v.id,
+          expression: v.expression,
+          steps: v.steps,
+          operatorsUsed: v.operatorsUsed,
+          artistry: v.artistry,
+        });
+      }
+    }
+
+    results.push({
+      id: `sol-${groupIndex}`,
+      expression: representative.expression,
+      canonicalFormula: group.canonicalFormula,
+      target,
+      cardsUsedCount: group.cardsUsedCount,
+      totalCardsCount: group.totalCardsCount,
+      usesAllCards: group.usesAllCards,
+      steps: representative.steps,
+      usedInitialValues: group.usedInitialValues,
+      operatorsUsed: representative.operatorsUsed,
+      artistry: representative.artistry,
+      variants: otherVariants.length > 0 ? otherVariants : undefined,
+    });
+  }
 
   // Sort solutions:
   // 1. First by usesAllCards (5 cards first)
-  // 2. By fewer steps / cards used
-  // 3. Alphabetically by expression
+  // 2. By higher artistry score
+  // 3. By fewer steps / cards used
+  // 4. Alphabetically by expression
   results.sort((a, b) => {
     if (a.usesAllCards !== b.usesAllCards) {
       return a.usesAllCards ? -1 : 1;
     }
     if (a.cardsUsedCount !== b.cardsUsedCount) {
       return b.cardsUsedCount - a.cardsUsedCount;
+    }
+    const scoreA = a.artistry?.score ?? 0;
+    const scoreB = b.artistry?.score ?? 0;
+    if (scoreB !== scoreA) {
+      return scoreB - scoreA;
     }
     if (a.steps.length !== b.steps.length) {
       return a.steps.length - b.steps.length;
