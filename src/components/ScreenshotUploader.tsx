@@ -243,14 +243,13 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* Upload Dropzone */}
+      {/* Upload Dropzone: Native label and overlay input for full Windows Edge compatibility */}
       <div
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
         onDragOver={handleDrag}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-        className={`relative border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[170px] ${
+        className={`relative border-2 border-dashed rounded-xl p-5 text-center transition-all flex flex-col items-center justify-center min-h-[170px] ${
           dragActive
             ? 'border-blue-500 bg-blue-50/70'
             : imagePreview
@@ -258,23 +257,27 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
             : 'border-slate-300 hover:border-blue-400 bg-white hover:bg-slate-50/60'
         }`}
       >
+        {/* Transparent native file input covering the entire dropzone area */}
         <input
+          id="screenshot-file-input"
           ref={fileInputRef}
           type="file"
-          accept="image/*"
-          className="hidden"
+          accept="image/png,image/jpeg,image/jpg,image/webp,image/*"
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
           onChange={handleFileInput}
+          title="クリックして画像ファイルを選択"
+          disabled={isAnalyzing}
         />
 
         {isAnalyzing ? (
-          <div className="flex flex-col items-center justify-center space-y-2 py-4">
+          <div className="flex flex-col items-center justify-center space-y-2 py-4 pointer-events-none">
             <Loader2 className="w-7 h-7 text-blue-600 animate-spin" />
             <span className="text-sm font-semibold text-slate-800">
               画像を解析中...
             </span>
           </div>
         ) : imagePreview ? (
-          <div className="flex flex-col items-center justify-center w-full">
+          <div className="flex flex-col items-center justify-center w-full pointer-events-none">
             <div className="relative group max-h-[130px] overflow-hidden rounded-lg border border-slate-200 shadow-xs mb-2">
               <img
                 src={imagePreview}
@@ -286,9 +289,10 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
                 画像を変更
               </div>
             </div>
+            <span className="text-[11px] text-blue-600 font-medium">クリックして別の画像に変更</span>
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center space-y-2 py-2">
+          <div className="flex flex-col items-center justify-center space-y-2 py-2 pointer-events-none">
             <div className="w-9 h-9 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
               <UploadCloud className="w-4 h-4" />
             </div>
@@ -300,23 +304,40 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
                 クリックして選択 または <kbd className="px-1 py-0.5 bg-slate-100 border border-slate-200 rounded text-[10px]">Ctrl+V</kbd>
               </p>
             </div>
+            <div className="pt-1">
+              <span className="inline-flex items-center gap-1 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded border border-slate-200 font-medium">
+                <FileImage className="w-3.5 h-3.5 text-slate-500" />
+                ファイルを選択
+              </span>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Quick sample button */}
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleLoadSample();
-          }}
-          className="text-xs text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1 font-medium transition-colors"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-          サンプル問題で試す
-        </button>
+      {/* Quick sample & Select file buttons */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="screenshot-file-input"
+            className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded border border-slate-200 font-medium flex items-center gap-1 cursor-pointer transition-colors"
+            title="端末から画像ファイルを選択"
+          >
+            <FileImage className="w-3.5 h-3.5 text-slate-500" />
+            <span>ファイルを選択</span>
+          </label>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleLoadSample();
+            }}
+            className="text-xs text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1 font-medium transition-colors"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            サンプルで試す
+          </button>
+        </div>
 
         {imagePreview && (
           <button
@@ -330,7 +351,7 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
             }}
             className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
           >
-            クリア
+            画像をクリア
           </button>
         )}
       </div>

@@ -50,14 +50,34 @@ export default function App() {
     setResetTrigger((prev) => prev + 1);
   };
 
+  // Helper to normalize input string (converts full-width digits to half-width, strips non-digits)
+  const normalizeNumericInput = (valStr: string): string => {
+    // Convert full-width numbers （０-９） to half-width (0-9)
+    const halfWidth = valStr.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xfee0));
+    // Keep only digits
+    return halfWidth.replace(/[^0-9]/g, '');
+  };
+
+  // Update target value
+  const handleTargetChange = (valStr: string) => {
+    const clean = normalizeNumericInput(valStr);
+    if (clean === '') {
+      setTarget('');
+    } else {
+      const num = parseInt(clean, 10);
+      setTarget(isNaN(num) ? '' : Math.max(1, Math.min(9999, num)));
+    }
+  };
+
   // Update individual card value
   const handleCardChange = (index: number, valStr: string) => {
+    const clean = normalizeNumericInput(valStr);
     const newCards = [...cards];
-    if (valStr.trim() === '') {
+    if (clean === '') {
       newCards[index] = '';
     } else {
-      const val = parseInt(valStr, 10);
-      newCards[index] = isNaN(val) ? '' : Math.max(1, Math.min(999, val));
+      const val = parseInt(clean, 10);
+      newCards[index] = isNaN(val) ? '' : Math.max(1, Math.min(99, val));
     }
     setCards(newCards);
   };
@@ -117,25 +137,38 @@ export default function App() {
 
               {/* TARGET value input */}
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-600">TARGET (目標値)</label>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="target-input" className="text-xs font-semibold text-slate-600 block cursor-pointer">
+                    TARGET (目標値)
+                  </label>
+                  {target !== '' && (
+                    <button
+                      type="button"
+                      onClick={() => setTarget('')}
+                      className="text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      クリア
+                    </button>
+                  )}
+                </div>
                 <div className="relative">
                   <input
-                    type="number"
-                    min="1"
+                    id="target-input"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
                     placeholder="例: 31"
                     value={target}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v.trim() === '') {
-                        setTarget('');
-                      } else {
-                        const num = parseInt(v, 10);
-                        setTarget(isNaN(num) ? '' : Math.max(1, num));
+                    onChange={(e) => handleTargetChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        document.getElementById('card-input-0')?.focus();
                       }
                     }}
-                    className="w-full pl-3.5 pr-14 py-2 bg-slate-50 border border-slate-200 rounded-lg text-lg font-bold font-mono text-slate-900 placeholder:text-slate-300 placeholder:font-normal focus:outline-none focus:border-blue-500 focus:bg-white shadow-xs transition-colors"
+                    className="w-full pl-3.5 pr-20 py-2 bg-white border border-slate-300 rounded-lg text-lg font-bold font-mono text-slate-900 placeholder:text-slate-300 placeholder:font-normal focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-xs transition-all cursor-text"
                   />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                     <span className="text-[11px] font-bold text-blue-600 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded">
                       TARGET
                     </span>
@@ -145,18 +178,56 @@ export default function App() {
 
               {/* 5 Cards inputs */}
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-600">カード (5枚)</label>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="card-input-0" className="text-xs font-semibold text-slate-600 cursor-pointer">
+                    カード (5枚)
+                  </label>
+                  {cards.some((c) => c !== '') && (
+                    <button
+                      type="button"
+                      onClick={() => setCards(['', '', '', '', ''])}
+                      className="text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      クリア
+                    </button>
+                  )}
+                </div>
                 <div className="grid grid-cols-5 gap-1.5">
                   {cards.map((val, idx) => (
                     <input
                       key={idx}
-                      type="number"
-                      min="1"
-                      max="99"
+                      id={`card-input-${idx}`}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoComplete="off"
                       placeholder={`#${idx + 1}`}
                       value={val}
-                      onChange={(e) => handleCardChange(idx, e.target.value)}
-                      className="w-full py-2 bg-slate-50 border border-slate-200 rounded-lg text-center font-bold font-mono text-base text-slate-800 placeholder:text-slate-300 placeholder:font-normal focus:outline-none focus:border-blue-500 focus:bg-white shadow-xs transition-colors"
+                      onChange={(e) => {
+                        handleCardChange(idx, e.target.value);
+                        // Auto-advance to next card if input has 1 digit and value is 2-9, or 2 digits
+                        const cleaned = normalizeNumericInput(e.target.value);
+                        if (cleaned.length >= 2 || (cleaned.length === 1 && parseInt(cleaned, 10) >= 2)) {
+                          if (idx < 4) {
+                            setTimeout(() => {
+                              document.getElementById(`card-input-${idx + 1}`)?.focus();
+                            }, 50);
+                          }
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowRight' || e.key === 'Enter') {
+                          if (idx < 4) {
+                            e.preventDefault();
+                            document.getElementById(`card-input-${idx + 1}`)?.focus();
+                          }
+                        } else if (e.key === 'ArrowLeft' || (e.key === 'Backspace' && cards[idx] === '')) {
+                          if (idx > 0) {
+                            document.getElementById(`card-input-${idx - 1}`)?.focus();
+                          }
+                        }
+                      }}
+                      className="w-full py-2 bg-white border border-slate-300 rounded-lg text-center font-bold font-mono text-base text-slate-900 placeholder:text-slate-300 placeholder:font-normal focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-xs transition-all cursor-text"
                     />
                   ))}
                 </div>
