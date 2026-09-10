@@ -118,6 +118,29 @@ URLにパラメータを付与することで、ページアクセス時に特�
 
 ---
 
+## ⚙️ 環境変数の設定
+
+スクリーンショット画像の自動読み取り（Gemini Vision AI）を利用する場合、以下の環境変数を設定してください。
+（※手動入力やURLパラメータからの利用のみであれば、APIキー未設定でも全探索ソルバー機能はそのまま動作します）
+
+| 環境変数名 | 必須 / 任意 | 説明 | デフォルト値 / 設定例 |
+| :--- | :--- | :--- | :--- |
+| `GEMINI_API_KEY` | **スクショ認識時必須** | Google Gemini API の API キー | `AIzaSy...` |
+| `GEMINI_MODEL` | 任意 | 画像認識に使用する Gemini モデル名 | `gemini-flash-latest`<br>（例: `gemini-3.8-flash`, `gemini-3.1-flash-lite` など） |
+
+### 設定方法
+プロジェクトルートに `.env` ファイルを作成し、以下のように設定します（`.env.example` 参照）：
+
+```env
+# Gemini API Key (スクリーンショット自動解析用)
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# 使用するGeminiモデル (未指定時は gemini-flash-latest)
+GEMINI_MODEL=gemini-flash-latest
+```
+
+---
+
 ## 💻 開発・実行
 
 ```bash
