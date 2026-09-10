@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UploadCloud, Image as ImageIcon, Sparkles, Loader2, RefreshCw, AlertCircle, CheckCircle2, FileImage } from 'lucide-react';
+import { UploadCloud, Image as ImageIcon, Loader2, RefreshCw, AlertCircle, CheckCircle2, FileImage } from 'lucide-react';
 
 interface ScreenshotUploaderProps {
   onDataDetected: (target: number, cards: number[], imagePreviewUrl?: string) => void;
@@ -233,14 +233,6 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
     }
   };
 
-  // Load sample problem screenshot / test data
-  const handleLoadSample = () => {
-    setError(null);
-    setDetectionSuccess(true);
-    setDetectionNotes('サンプルデータ（TARGET: 31, カード: [6, 1, 1, 4, 5]）をロードしました。');
-    onDataDetected(31, [6, 1, 1, 4, 5], undefined);
-  };
-
   return (
     <div className="space-y-3">
       {/* Upload Dropzone: Native label and overlay input for full Windows Edge compatibility */}
@@ -314,32 +306,9 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
         )}
       </div>
 
-      {/* Quick sample & Select file buttons */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <label
-            htmlFor="screenshot-file-input"
-            className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded border border-slate-200 font-medium flex items-center gap-1 cursor-pointer transition-colors"
-            title="端末から画像ファイルを選択"
-          >
-            <FileImage className="w-3.5 h-3.5 text-slate-500" />
-            <span>ファイルを選択</span>
-          </label>
-
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleLoadSample();
-            }}
-            className="text-xs text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1 font-medium transition-colors"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            サンプルで試す
-          </button>
-        </div>
-
-        {imagePreview && (
+      {/* Clear image button if an image is loaded */}
+      {imagePreview && (
+        <div className="flex justify-end">
           <button
             type="button"
             onClick={(e) => {
@@ -353,8 +322,8 @@ export const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
           >
             画像をクリア
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Status Banners */}
       {detectionSuccess && (

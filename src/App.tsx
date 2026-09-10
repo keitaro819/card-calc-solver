@@ -3,19 +3,124 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Solution } from './types.ts';
 import { solveGameAllCardsOnly, evaluatePuzzleDifficulty } from './solver.ts';
 import { ScreenshotUploader } from './components/ScreenshotUploader.tsx';
 import { AllCardsSolutionsList } from './components/AllCardsSolutionsList.tsx';
 import { RotateCcw } from 'lucide-react';
 
+// Helper to parse target and cards from URL query parameters
+function parseUrlParams(): { target: number | ''; cards: Array<number | ''> } {
+  if (typeof window === 'undefined') {
+    return { target: '', cards: ['', '', '', '', ''] };
+  }
+  try {
+    const params = new URLSearchParams(window.location.search);
+    // target or t
+    const targetParam = params.get('target') ?? params.get('t');
+    let parsedTarget: number | '' = '';
+    if (targetParam) {
+      const parsed = parseInt(targetParam.trim(), 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        parsedTarget = Math.max(1, Math.min(9999, parsed));
+      }
+    }
+
+    // cards or c (supports comma, hyphen, space, slash delimiters)
+    const cardsParam = params.get('cards') ?? params.get('c');
+    const parsedCards: Array<number | ''> = ['', '', '', '', ''];
+
+    if (cardsParam) {
+      const parts = cardsParam.split(/[,_\-\s/]+/).filter(Boolean);
+      for (let i = 0; i < 5; i++) {
+        if (i < parts.length) {
+          const num = parseInt(parts[i].trim(), 10);
+          if (!isNaN(num) && num > 0) {
+            parsedCards[i] = Math.max(1, Math.min(99, num));
+          }
+        }
+      }
+    } else {
+      // Individual params: c1..c5 or card1..card5
+      for (let i = 0; i < 5; i++) {
+        const val = params.get(`c${i + 1}`) ?? params.get(`card${i + 1}`);
+        if (val) {
+          const num = parseInt(val.trim(), 10);
+          if (!isNaN(num) && num > 0) {
+            parsedCards[i] = Math.max(1, Math.min(99, num));
+          }
+        }
+      }
+    }
+
+    return { target: parsedTarget, cards: parsedCards };
+  } catch {
+    return { target: '', cards: ['', '', '', '', ''] };
+  }
+}
+
 export default function App() {
-  // Current recognized or configured puzzle values (empty initial state)
-  const [target, setTarget] = useState<number | ''>('');
-  const [cards, setCards] = useState<Array<number | ''>>(['', '', '', '', '']);
+  // Parse initial values from URL query parameters if present
+  const initialParams = useMemo(() => parseUrlParams(), []);
+
+  // Current recognized or configured puzzle values
+  const [target, setTarget] = useState<number | ''>(() => initialParams.target);
+  const [cards, setCards] = useState<Array<number | ''>>(() => initialParams.cards);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | undefined>(undefined);
   const [resetTrigger, setResetTrigger] = useState<number>(0);
+
+  // Sync state back to URL query parameters
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const url = new URL(window.location.href);
+
+      // Target param
+      if (typeof target === 'number' && target > 0) {
+        url.searchParams.set('target', String(target));
+        url.searchParams.delete('t');
+      } else {
+        url.searchParams.delete('target');
+        url.searchParams.delete('t');
+      }
+
+      // Cards param
+      const hasAnyCard = cards.some((c) => typeof c === 'number' && c > 0);
+      if (hasAnyCard) {
+        // Form comma-separated values (e.g. 6,1,1,4,5)
+        url.searchParams.set('cards', cards.map((c) => (c === '' ? '' : String(c))).join(','));
+        url.searchParams.delete('c');
+        for (let i = 1; i <= 5; i++) {
+          url.searchParams.delete(`c${i}`);
+          url.searchParams.delete(`card${i}`);
+        }
+      } else {
+        url.searchParams.delete('cards');
+        url.searchParams.delete('c');
+        for (let i = 1; i <= 5; i++) {
+          url.searchParams.delete(`c${i}`);
+          url.searchParams.delete(`card${i}`);
+        }
+      }
+
+      const newRelativePathQuery = url.pathname + (url.search ? url.search : '');
+      window.history.replaceState(null, '', newRelativePathQuery);
+    } catch {
+      // Ignore URL history errors if any
+    }
+  }, [target, cards]);
+
+  // Handle browser forward/back navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      const { target: urlTarget, cards: urlCards } = parseUrlParams();
+      setTarget(urlTarget);
+      setCards(urlCards);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Recognition state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
